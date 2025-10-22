@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snakes & Ladders - Multiplayer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Welcome Screen -->
+        <div id="welcome-screen" class="screen active">
+            <div class="welcome-card">
+                <h1 class="title">🎲 Snakes & Ladders 🪜</h1>
+                <p class="subtitle">Play with friends over local network!</p>
+                
+                <div class="input-group">
+                    <input type="text" id="player-name" placeholder="Enter your name" maxlength="15" autocomplete="off">
+                </div>
+
+                <div class="button-group">
+                    <button id="create-room-btn" class="btn btn-primary">
+                        <span class="btn-icon">🎮</span>
+                        Create Room
+                    </button>
+                    <button id="join-room-btn" class="btn btn-secondary">
+                        <span class="btn-icon">🚪</span>
+                        Join Room
+                    </button>
+                </div>
+
+                <div id="join-room-input" class="join-room-section" style="display: none;">
+                    <input type="text" id="room-code" placeholder="Enter room code" maxlength="6" autocomplete="off">
+                    <button id="join-submit-btn" class="btn btn-accent">Join</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="screen">
+            <div class="lobby-card">
+                <div class="lobby-header">
+                    <h2 class="lobby-title">Game Lobby</h2>
+                    <div class="room-code-display">
+                        <span class="room-code-label">Room Code:</span>
+                        <span id="room-code-display" class="room-code-value"></span>
+                        <button id="copy-room-code" class="btn-copy" title="Copy room code">📋</button>
+                    </div>
+                </div>
+
+                <div class="players-section">
+                    <h3 class="section-title">Players</h3>
+                    <div id="players-list" class="players-list"></div>
+                </div>
+
+                <div class="lobby-controls">
+                    <button id="ready-btn" class="btn btn-ready">Ready</button>
+                    <button id="start-game-btn" class="btn btn-primary" style="display: none;">Start Game</button>
+                </div>
+
+                <p class="lobby-info">Waiting for all players to be ready...</p>
+                
+                <button id="leave-lobby-btn" class="btn btn-disconnect">Leave Game</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-container">
+                <div class="game-sidebar" id="game-sidebar">
+                    <div class="game-info">
+                        <h3 class="game-title">🎲 Snakes & Ladders</h3>
+                        <div id="current-turn-display" class="current-turn"></div>
+                        <div id="last-roll-display" class="last-roll"></div>
+                    </div>
+
+                    <div class="players-scoreboard">
+                        <h4 class="scoreboard-title">Players</h4>
+                        <div id="scoreboard-list" class="scoreboard-list"></div>
+                    </div>
+
+                    <div class="game-controls">
+                        <button id="roll-dice-btn" class="btn btn-dice">
+                            <span class="dice-icon">🎲</span>
+                            Roll Dice
+                        </button>
+                        <button id="reset-game-btn" class="btn btn-reset">Reset Game</button>
+                        <button id="leave-game-btn" class="btn btn-disconnect">Leave Game</button>
+                    </div>
+                </div>
+
+                <!-- Mobile UI Toggle Button -->
+                <button id="toggle-ui-btn" class="toggle-ui-btn">
+                    <span class="toggle-icon">☰</span>
+                </button>
+
+                <!-- Mobile Floating Roll Button -->
+                <button id="mobile-roll-btn" class="mobile-roll-btn">
+                    <span class="dice-icon">🎲</span>
+                </button>
+
+                <div class="board-container">
+                    <canvas id="game-board" width="800" height="800"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Winner Modal -->
+        <div id="winner-modal" class="modal">
+            <div class="modal-content">
+                <div class="winner-animation">🎉</div>
+                <h2 id="winner-name" class="winner-title"></h2>
+                <p class="winner-subtitle">Won the game!</p>
+                <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+            </div>
+        </div>
+
+        <!-- Notification Toast -->
+        <div id="notification" class="notification"></div>
+
+        <!-- Dice Animation -->
+        <div id="dice-backdrop" class="dice-backdrop"></div>
+        <div id="dice-container" class="dice-container">
+            <div id="dice" class="dice"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
