@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const dgram = require('dgram');
+const os = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +15,14 @@ app.use('/sounds', express.static(path.join(__dirname, 'sounds')));
 
 // Game state
 const games = new Map();
+
+// Discovery configuration
+const DISCOVERY_PORT = 30303;
+const DISCOVERY_INTERVAL = 5000; // Broadcast every 5 seconds
+let discoveryEnabled = false;
+let discoverySocket = null;
+let discoveryInterval = null;
+let localGames = new Map(); // Track discoverable games
 
 // Snakes and Ladders configuration
 const SNAKES = {
@@ -44,30 +54,48 @@ const BOARD_SIZE = 100;
 const WINNING_POSITION = 100;
 
 class Game {
-    constructor(roomId) {
+    constructor(roomId, discoverable = false) {
         this.roomId = roomId;
         this.players = [];
         this.currentTurn = 0;
         this.started = false;
         this.winner = null;
         this.lastRoll = null;
+        this.discoverable = discoverable;
+        this.createdAt = Date.now();
+        this.hostname = null;
     }
 
-    addPlayer(playerId, playerName, persistentId = null) {
+    addPlayer(playerId, playerName, persistentId = null, playerColor = null, playerIcon = null) {
         if (this.players.length >= 6) {
             return { success: false, message: 'Room is full' };
         }
-        
-        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F'];
+
+        // Use custom color/icon if provided, otherwise use defaults
+        const defaultColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F'];
+        const defaultIcons = ['🎮', '🎯', '🎲', '🎪', '🎨', '🎭'];
+
+        let color = playerColor || defaultColors[this.players.length];
+        let icon = playerIcon || defaultIcons[this.players.length];
+
+        // If no custom values provided and we've used all defaults, fall back to first
+        if (!playerColor && this.players.length >= defaultColors.length) {
+            color = defaultColors[0];
+        }
+        if (!playerIcon && this.players.length >= defaultIcons.length) {
+            icon = defaultIcons[0];
+        }
+
         const player = {
             id: playerId,
             persistentId: persistentId || this.generatePlayerId(),
             name: playerName,
             position: 0,
-            color: colors[this.players.length],
+            color: color,
+            icon: icon,
             ready: false
         };
-        
+
         this.players.push(player);
         return { success: true, player };
     }
@@ -209,8 +237,143 @@ class Game {
             winner: this.winner,
             lastRoll: this.lastRoll,
             snakes: SNAKES,
-            ladders: LADDERS
+            ladders: LADDERS,
+            discoverable: this.discoverable,
+            hostname: this.hostname
         };
+    }
+
+    getDiscoveryInfo() {
+        return {
+            roomId: this.roomId,
+            hostname: this.hostname,
+            playerCount: this.players.length,
+            maxPlayers: 6,
+            started: this.started,
+            createdAt: this.createdAt
+        };
+    }
+}
+
+// Discovery functions
+function getLocalIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const interface of interfaces[name]) {
+            // Skip internal and non-IPv4 addresses
+            if (interface.family === 'IPv4' && !interface.internal) {
+                // Prefer WiFi/ethernet over other interfaces
+                if (name.toLowerCase().includes('wi-fi') ||
+                    name.toLowerCase().includes('wlan') ||
+                    name.toLowerCase().includes('ethernet') ||
+                    name.toLowerCase().includes('en')) {
+                    return interface.address;
+                }
+            }
+        }
+    }
+    // Fallback to any non-internal IPv4 address
+    for (const name of Object.keys(interfaces)) {
+        for (const interface of interfaces[name]) {
+            if (interface.family === 'IPv4' && !interface.internal) {
+                return interface.address;
+            }
+        }
+    }
+    return '127.0.0.1';
+}
+
+function startDiscovery() {
+    if (discoveryEnabled) return;
+
+    discoveryEnabled = true;
+    discoverySocket = dgram.createSocket('udp4');
+
+    discoverySocket.on('error', (err) => {
+        console.log('Discovery socket error:', err);
+        stopDiscovery();
+    });
+
+    discoverySocket.on('message', (msg, rinfo) => {
+        try {
+            const data = JSON.parse(msg.toString());
+            if (data.type === 'DISCOVER_REQUEST') {
+                // Send response with discoverable games
+                const discoverableGames = Array.from(games.values())
+                    .filter(game => game.discoverable && !game.started)
+                    .map(game => game.getDiscoveryInfo());
+
+                if (discoverableGames.length > 0) {
+                    const response = {
+                        type: 'DISCOVER_RESPONSE',
+                        serverIP: getLocalIP(),
+                        serverPort: PORT,
+                        games: discoverableGames,
+                        timestamp: Date.now()
+                    };
+
+                    discoverySocket.send(
+                        JSON.stringify(response),
+                        rinfo.port,
+                        rinfo.address
+                    );
+                }
+            }
+        } catch (err) {
+            // Ignore malformed messages
+        }
+    });
+
+    discoverySocket.bind(DISCOVERY_PORT, () => {
+        discoverySocket.setBroadcast(true);
+        console.log(`🔍 Game discovery enabled on port ${DISCOVERY_PORT}`);
+    });
+}
+
+function stopDiscovery() {
+    if (!discoveryEnabled) return;
+
+    discoveryEnabled = false;
+    if (discoveryInterval) {
+        clearInterval(discoveryInterval);
+        discoveryInterval = null;
+    }
+    if (discoverySocket) {
+        discoverySocket.close();
+        discoverySocket = null;
+    }
+    console.log('🔍 Game discovery disabled');
+}
+
+function broadcastDiscovery() {
+    if (!discoveryEnabled || !discoverySocket) return;
+
+    const discoverableGames = Array.from(games.values())
+        .filter(game => game.discoverable && !game.started)
+        .map(game => game.getDiscoveryInfo());
+
+    if (discoverableGames.length > 0) {
+        const message = {
+            type: 'GAME_BROADCAST',
+            serverIP: getLocalIP(),
+            serverPort: PORT,
+            games: discoverableGames,
+            timestamp: Date.now()
+        };
+
+        const buffer = Buffer.from(JSON.stringify(message));
+
+        // Broadcast to local network
+        discoverySocket.send(
+            buffer,
+            DISCOVERY_PORT,
+            '255.255.255.255',
+            (err) => {
+                if (err) {
+                    console.log('Broadcast error:', err);
+                }
+            }
+        );
     }
 }
 
@@ -218,16 +381,27 @@ class Game {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('create-room', ({ playerName }) => {
+    socket.on('create-room', ({ playerName, discoverable = false, hostname = null, playerColor = null, playerIcon = null }) => {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const game = new Game(roomId);
-        const result = game.addPlayer(socket.id, playerName);
-        
+        const game = new Game(roomId, discoverable);
+        if (hostname) {
+            game.hostname = hostname;
+        }
+        const result = game.addPlayer(socket.id, playerName, null, playerColor, playerIcon);
+
         if (result.success) {
             games.set(roomId, game);
             socket.join(roomId);
-            socket.emit('room-created', { roomId, player: result.player });
+            socket.emit('room-created', { roomId, player: result.player, discoverable });
             io.to(roomId).emit('game-state', game.getState());
+
+            // Start broadcasting if this is discoverable and discovery isn't enabled yet
+            if (discoverable && !discoveryInterval) {
+                startDiscovery();
+                discoveryInterval = setInterval(broadcastDiscovery, DISCOVERY_INTERVAL);
+                // Initial broadcast
+                setTimeout(broadcastDiscovery, 1000);
+            }
         }
     });
 
@@ -251,9 +425,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('join-room', ({ roomId, playerName }) => {
+    socket.on('join-room', ({ roomId, playerName, playerColor = null, playerIcon = null }) => {
         const game = games.get(roomId);
-        
+
         if (!game) {
             socket.emit('error', { message: 'Room not found' });
             return;
@@ -264,8 +438,8 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const result = game.addPlayer(socket.id, playerName);
-        
+        const result = game.addPlayer(socket.id, playerName, null, playerColor, playerIcon);
+
         if (result.success) {
             socket.join(roomId);
             socket.emit('room-joined', { roomId, player: result.player });
@@ -337,17 +511,57 @@ io.on('connection', (socket) => {
             console.log(`Player ${player.name} manually disconnected from room ${roomId}`);
             game.removePlayer(socket.id);
             socket.leave(roomId);
-            
+
             // Delete game if no players left
             if (game.players.length === 0) {
                 games.delete(roomId);
+                // Stop discovery if no discoverable games left
+                const hasDiscoverableGames = Array.from(games.values()).some(g => g.discoverable);
+                if (!hasDiscoverableGames && discoveryInterval) {
+                    clearInterval(discoveryInterval);
+                    discoveryInterval = null;
+                    setTimeout(stopDiscovery, 2000);
+                }
             } else {
                 io.to(roomId).emit('game-state', game.getState());
                 io.to(roomId).emit('player-left', { playerName: player.name });
             }
-            
+
             socket.emit('disconnected');
         }
+    });
+
+    // Discovery event handlers
+    socket.on('discover-games', () => {
+        if (!discoveryEnabled) {
+            startDiscovery();
+        }
+
+        // Send discovery request
+        const clientSocket = dgram.createSocket('udp4');
+        const message = Buffer.from(JSON.stringify({ type: 'DISCOVER_REQUEST' }));
+
+        clientSocket.on('message', (msg, rinfo) => {
+            try {
+                const data = JSON.parse(msg.toString());
+                if (data.type === 'DISCOVER_RESPONSE') {
+                    socket.emit('games-discovered', data);
+                }
+            } catch (err) {
+                // Ignore malformed messages
+            }
+        });
+
+        clientSocket.bind(() => {
+            clientSocket.setBroadcast(true);
+            clientSocket.send(message, DISCOVERY_PORT, '255.255.255.255', (err) => {
+                if (err) {
+                    console.log('Discovery request error:', err);
+                }
+                // Close socket after sending
+                setTimeout(() => clientSocket.close(), 5000);
+            });
+        });
     });
 
     socket.on('disconnect', () => {

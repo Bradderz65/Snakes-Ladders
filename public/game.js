@@ -10,6 +10,24 @@ let isReconnecting = false;
 // Animation state
 let animationInProgress = false;
 let playerAnimations = {};
+let diceAnimationInProgress = false; // Track when dice animation is happening
+
+// Game statistics
+let totalRolls = 0;
+let playerRollCounts = {};
+
+// Camera state (for mobile overview camera)
+let followCameraEnabled = false;
+let cameraZoom = 1.8; // Current zoom level (dynamic)
+let cameraTargetZoom = 1.8; // Target zoom level for smooth transitions
+let cameraMinZoom = 1.2; // Minimum zoom (when players are close)
+let cameraMaxZoom = 2.5; // Maximum zoom (when players are spread out)
+let cameraTargetX = 0;
+let cameraTargetY = 0;
+let cameraCurrentX = 0;
+let cameraCurrentY = 0;
+let cameraSmoothing = 0.08; // Smoothing factor for camera movement
+let cameraZoomSmoothing = 0.05; // Smoothing factor for zoom changes
 
 // Sound system
 const sounds = {
@@ -58,6 +76,86 @@ const joinRoomInput = document.getElementById('join-room-input');
 const roomCodeInput = document.getElementById('room-code');
 const joinSubmitBtn = document.getElementById('join-submit-btn');
 
+// Discovery elements
+const enableDiscoveryCheckbox = document.getElementById('enable-discovery');
+const localGamesSection = document.getElementById('local-games-section');
+const localGamesList = document.getElementById('local-games-list');
+const refreshGamesBtn = document.getElementById('refresh-games-btn');
+
+// Discovery state
+let discoveredGames = new Map();
+let lastDiscoveryTime = 0;
+
+// Player customization elements
+const colorOptions = document.querySelectorAll('.color-option');
+const iconOptions = document.querySelectorAll('.icon-option');
+const previewPlayer = document.getElementById('preview-player');
+const previewIcon = document.getElementById('preview-icon');
+const conflictModal = document.getElementById('conflict-modal');
+const conflictMessage = document.getElementById('conflict-message');
+const keepCustomizationBtn = document.getElementById('keep-customization-btn');
+const changeCustomizationBtn = document.getElementById('change-customization-btn');
+
+// Player customization state
+let selectedColor = '#FF6B6B';
+let selectedIcon = '🎮';
+let pendingJoinAction = null;
+
+// Initialize collapsible sections
+function initializeCollapsibleSections() {
+    const sectionToggles = document.querySelectorAll('.section-header-toggle');
+    
+    // On mobile, collapse sections by default to save space
+    const isMobile = window.innerWidth <= 768;
+    
+    sectionToggles.forEach(toggle => {
+        const content = toggle.nextElementSibling;
+        
+        // Collapse on mobile by default
+        if (isMobile) {
+            toggle.classList.add('collapsed');
+            content.classList.add('collapsed');
+        }
+        
+        toggle.addEventListener('click', () => {
+            toggle.classList.toggle('collapsed');
+            content.classList.toggle('collapsed');
+        });
+    });
+}
+
+// Initialize collapsible sections when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    initializeCollapsibleSections();
+    
+    // Re-initialize on window resize to handle orientation changes
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            const isMobile = window.innerWidth <= 768;
+            const sectionToggles = document.querySelectorAll('.section-header-toggle');
+            
+            sectionToggles.forEach(toggle => {
+                const content = toggle.nextElementSibling;
+                
+                // Auto-collapse on mobile if not already interacted with
+                if (isMobile && !toggle.dataset.userInteracted) {
+                    toggle.classList.add('collapsed');
+                    content.classList.add('collapsed');
+                }
+            });
+        }, 250);
+    });
+    
+    // Mark sections as user-interacted when clicked
+    document.querySelectorAll('.section-header-toggle').forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            toggle.dataset.userInteracted = 'true';
+        });
+    });
+});
+
 // Lobby screen
 const roomCodeDisplay = document.getElementById('room-code-display');
 const copyRoomCodeBtn = document.getElementById('copy-room-code');
@@ -76,9 +174,17 @@ const leaveGameBtn = document.getElementById('leave-game-btn');
 const canvas = document.getElementById('game-board');
 const ctx = canvas.getContext('2d');
 
+// Mobile top bar elements
+const mobileTopBar = document.getElementById('mobile-top-bar');
+const mobileCurrentTurn = document.getElementById('mobile-current-turn');
+const mobileLastRoll = document.getElementById('mobile-last-roll');
+const mobileScoreboardList = document.getElementById('mobile-scoreboard-list');
+
 // Winner modal
 const winnerName = document.getElementById('winner-name');
+const winnerRolls = document.getElementById('winner-rolls');
 const playAgainBtn = document.getElementById('play-again-btn');
+const newGameBtn = document.getElementById('new-game-btn');
 
 // Notification
 const notification = document.getElementById('notification');
@@ -89,9 +195,17 @@ const diceElement = document.getElementById('dice');
 const diceBackdrop = document.getElementById('dice-backdrop');
 
 // Mobile UI controls
-const toggleUIBtn = document.getElementById('toggle-ui-btn');
 const mobileRollBtn = document.getElementById('mobile-roll-btn');
 const gameSidebar = document.getElementById('game-sidebar');
+
+// Mobile settings dropdown
+const mobileSettingsBtn = document.getElementById('mobile-settings-btn');
+const mobileSettingsMenu = document.getElementById('mobile-settings-menu');
+const mobileResetBtn = document.getElementById('mobile-reset-btn');
+const mobileLeaveBtn = document.getElementById('mobile-leave-btn');
+
+// Mobile floating buttons
+const mobileCameraBtn = document.getElementById('mobile-camera-btn');
 
 // Session management functions
 function saveSession() {
@@ -140,7 +254,25 @@ createRoomBtn.addEventListener('click', () => {
         showNotification('Please enter your name', 'error');
         return;
     }
-    socket.emit('create-room', { playerName: name });
+
+    // Check for conflicts before creating room
+    if (gameState && gameState.players) {
+        const conflicts = checkForConflicts(gameState.players);
+        if (conflicts.length > 0) {
+            pendingJoinAction = {
+                type: 'create-room',
+                playerName: name
+            };
+            showConflictModal(conflicts);
+            return;
+        }
+    }
+
+    // No conflicts, proceed with creation
+    executeJoinAction({
+        type: 'create-room',
+        playerName: name
+    });
 });
 
 joinRoomBtn.addEventListener('click', () => {
@@ -150,22 +282,114 @@ joinRoomBtn.addEventListener('click', () => {
 joinSubmitBtn.addEventListener('click', () => {
     const name = playerNameInput.value.trim();
     const roomCode = roomCodeInput.value.trim().toUpperCase();
-    
+
     if (!name) {
         showNotification('Please enter your name', 'error');
         return;
     }
-    
+
     if (!roomCode) {
         showNotification('Please enter room code', 'error');
         return;
     }
-    
-    socket.emit('join-room', { roomId: roomCode, playerName: name });
+
+    // Check for conflicts before joining room
+    if (gameState && gameState.players) {
+        const conflicts = checkForConflicts(gameState.players);
+        if (conflicts.length > 0) {
+            pendingJoinAction = {
+                type: 'join-room',
+                roomId: roomCode,
+                playerName: name
+            };
+            showConflictModal(conflicts);
+            return;
+        }
+    }
+
+    // No conflicts, proceed with joining
+    executeJoinAction({
+        type: 'join-room',
+        roomId: roomCode,
+        playerName: name
+    });
 });
 
 roomCodeInput.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
+});
+
+// Update preview name when typing
+playerNameInput.addEventListener('input', (e) => {
+    const previewNameEl = document.getElementById('preview-name');
+    if (previewNameEl) {
+        previewNameEl.textContent = e.target.value.trim() || 'Player';
+    }
+});
+
+// Player customization event listeners
+colorOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        // Remove previous selection
+        document.querySelectorAll('.color-option.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+
+        // Add selection to clicked option
+        option.classList.add('selected');
+        selectedColor = option.dataset.color;
+
+        // Update preview
+        updatePlayerPreview();
+    });
+});
+
+iconOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        // Remove previous selection
+        document.querySelectorAll('.icon-option.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+
+        // Add selection to clicked option
+        option.classList.add('selected');
+        selectedIcon = option.dataset.icon;
+
+        // Update preview
+        updatePlayerPreview();
+    });
+});
+
+// Conflict modal event listeners
+keepCustomizationBtn.addEventListener('click', () => {
+    conflictModal.classList.remove('active');
+    if (pendingJoinAction) {
+        executeJoinAction(pendingJoinAction);
+        pendingJoinAction = null;
+    }
+});
+
+changeCustomizationBtn.addEventListener('click', () => {
+    conflictModal.classList.remove('active');
+    pendingJoinAction = null;
+    // Focus back to customization area
+    document.querySelector('.player-customization').scrollIntoView({ behavior: 'smooth' });
+});
+
+// Discovery event listeners
+refreshGamesBtn.addEventListener('click', () => {
+    refreshGamesBtn.disabled = true;
+    refreshGamesBtn.querySelector('.refresh-icon').textContent = '⏳';
+    discoveredGames.clear();
+    updateLocalGamesList();
+
+    socket.emit('discover-games');
+
+    // Re-enable after 5 seconds
+    setTimeout(() => {
+        refreshGamesBtn.disabled = false;
+        refreshGamesBtn.querySelector('.refresh-icon').textContent = '🔄';
+    }, 5000);
 });
 
 // Event listeners - Lobby screen
@@ -203,8 +427,61 @@ resetGameBtn.addEventListener('click', () => {
     }
 });
 
+// Enhanced winner modal function
+function showWinnerModal(winner) {
+    // Set winner name
+    winnerName.textContent = `${winner.name}`;
+
+    // Set winner statistics
+    const winnerRollCount = playerRollCounts[winner.persistentId] || 0;
+    winnerRolls.textContent = winnerRollCount;
+
+    // Add celebration effects
+    createVictoryEffects();
+
+    // Play victory sound (if available)
+    playVictorySound();
+
+    // Show the modal
+    winnerModal.classList.add('active');
+}
+
+// Create additional victory effects
+function createVictoryEffects() {
+    // Create ripple effect on the modal
+    const modal = document.querySelector('.winner-modal-content');
+    modal.style.animation = 'none';
+    setTimeout(() => {
+        modal.style.animation = '';
+    }, 10);
+}
+
+// Play victory sound (placeholder for future enhancement)
+function playVictorySound() {
+    // You can add a victory sound here
+    // For now, we'll just use the existing notification system
+    console.log('Victory! 🎉');
+}
+
 playAgainBtn.addEventListener('click', () => {
+    // Reset statistics for new game
+    totalRolls = 0;
+    playerRollCounts = {};
+
     socket.emit('reset-game', { roomId: currentRoom });
+    winnerModal.classList.remove('active');
+});
+
+// New game button - goes back to welcome screen
+newGameBtn.addEventListener('click', () => {
+    // Reset statistics
+    totalRolls = 0;
+    playerRollCounts = {};
+
+    // Leave current room and go to welcome screen
+    if (currentRoom) {
+        socket.emit('manual-disconnect', { roomId: currentRoom });
+    }
     winnerModal.classList.remove('active');
 });
 
@@ -221,29 +498,89 @@ leaveGameBtn.addEventListener('click', () => {
     }
 });
 
-// Mobile UI toggle
-let isSidebarVisible = false; // Start hidden on mobile for cleaner view
+// Mobile settings dropdown functionality
+let isMobileMenuOpen = false;
 
-// Initialize sidebar state on mobile
-function initializeMobileUI() {
-    if (window.innerWidth <= 768) {
-        gameSidebar.classList.add('hidden');
-        toggleUIBtn.querySelector('.toggle-icon').textContent = '📋';
-        isSidebarVisible = false;
+mobileSettingsBtn.addEventListener('click', () => {
+    isMobileMenuOpen = !isMobileMenuOpen;
+    if (isMobileMenuOpen) {
+        mobileSettingsMenu.classList.add('open');
+        // Close menu when clicking outside
+        setTimeout(() => {
+            document.addEventListener('click', closeMobileMenu);
+        }, 100);
     } else {
-        gameSidebar.classList.remove('hidden');
-        isSidebarVisible = true;
+        mobileSettingsMenu.classList.remove('open');
+        document.removeEventListener('click', closeMobileMenu);
+    }
+});
+
+function closeMobileMenu(event) {
+    if (!mobileSettingsBtn.contains(event.target) && !mobileSettingsMenu.contains(event.target)) {
+        isMobileMenuOpen = false;
+        mobileSettingsMenu.classList.remove('open');
+        document.removeEventListener('click', closeMobileMenu);
     }
 }
 
-toggleUIBtn.addEventListener('click', () => {
-    isSidebarVisible = !isSidebarVisible;
-    if (isSidebarVisible) {
-        gameSidebar.classList.remove('hidden');
-        toggleUIBtn.querySelector('.toggle-icon').textContent = '☰';
+// Mobile settings button event listeners
+mobileResetBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to reset the game?')) {
+        socket.emit('reset-game', { roomId: currentRoom });
+        mobileSettingsMenu.classList.remove('open');
+        isMobileMenuOpen = false;
+        document.removeEventListener('click', closeMobileMenu);
+    }
+});
+
+mobileLeaveBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to leave the game?')) {
+        socket.emit('manual-disconnect', { roomId: currentRoom });
+        mobileSettingsMenu.classList.remove('open');
+        isMobileMenuOpen = false;
+        document.removeEventListener('click', closeMobileMenu);
+    }
+});
+
+// Mobile floating camera button event listener
+mobileCameraBtn.addEventListener('click', () => {
+    const isMobile = window.innerWidth <= 768;
+
+    if (!isMobile) {
+        showNotification('Camera zoom is only available on mobile devices!', 'warning');
+        return;
+    }
+
+    if (!gameState || !gameState.players || gameState.players.length === 0) {
+        showNotification('No players in game!', 'warning');
+        return;
+    }
+
+    followCameraEnabled = !followCameraEnabled;
+
+    if (followCameraEnabled) {
+        // Enable camera to show all players
+        updateCameraTarget();
+        startCameraAnimation();
+        mobileCameraBtn.classList.add('active');
+        updateCameraButtonIcon();
+        showNotification(`Dynamic camera enabled - Auto-zoom to keep all players in view!`, 'success');
     } else {
-        gameSidebar.classList.add('hidden');
-        toggleUIBtn.querySelector('.toggle-icon').textContent = '📋';
+        // Disable camera and reset view
+        cameraCurrentX = 0;
+        cameraCurrentY = 0;
+        cameraTargetX = 0;
+        cameraTargetY = 0;
+        cameraZoom = cameraTargetZoom = 1.8; // Reset zoom to default
+        stopCameraAnimation();
+        mobileCameraBtn.classList.remove('active');
+        updateCameraButtonIcon();
+        showNotification('Camera disabled - Reset view', 'info');
+    }
+
+    // Trigger canvas redraw
+    if (gameState && gameState.started) {
+        drawBoard();
     }
 });
 
@@ -261,13 +598,18 @@ mobileRollBtn.addEventListener('click', () => {
 });
 
 // Socket event handlers
-socket.on('room-created', ({ roomId, player }) => {
+socket.on('room-created', ({ roomId, player, discoverable }) => {
     currentRoom = roomId;
     currentPlayer = player;
     roomCodeDisplay.textContent = roomId;
     saveSession();
     switchScreen('lobby');
-    showNotification('Room created successfully!', 'success');
+
+    if (discoverable) {
+        showNotification('Room created and discoverable on local network!', 'success');
+    } else {
+        showNotification('Room created successfully!', 'success');
+    }
 });
 
 socket.on('room-joined', ({ roomId, player }) => {
@@ -306,12 +648,35 @@ socket.on('disconnected', () => {
     currentRoom = null;
     currentPlayer = null;
     gameState = null;
+    // Stop camera animation when leaving game
+    stopCameraAnimation();
+    followCameraEnabled = false;
+    cameraZoom = cameraTargetZoom = 1.8; // Reset zoom
+    diceAnimationInProgress = false; // Reset dice animation flag
+    mobileCameraBtn.classList.remove('active');
+    updateCameraButtonIcon();
+    // Ensure scrolling is re-enabled when leaving game
+    document.body.classList.remove('game-active-mobile');
     switchScreen('welcome');
     showNotification('You have left the game', 'info');
 });
 
-socket.on('player-left', ({ playerName }) => {
+socket.on('player-left', ({ playerId, playerName }) => {
     showNotification(`${playerName} left the game`, 'info');
+
+    // Update camera if players leave (recalculate center and zoom)
+    if (followCameraEnabled && gameState && gameState.players.length > 0) {
+        updateCameraTarget();
+        showNotification('Camera updated - Recentering on remaining players', 'info');
+    } else if (followCameraEnabled && (!gameState || gameState.players.length === 0)) {
+        // No players left, disable camera
+        followCameraEnabled = false;
+        cameraZoom = cameraTargetZoom = 1.8; // Reset zoom
+        stopCameraAnimation();
+        mobileCameraBtn.classList.remove('active');
+        updateCameraButtonIcon();
+        showNotification('Camera disabled - No players in game', 'info');
+    }
 });
 
 socket.on('game-state', (state) => {
@@ -329,15 +694,27 @@ socket.on('game-state', (state) => {
 });
 
 socket.on('game-started', () => {
+    // Reset statistics for new game
+    totalRolls = 0;
+    playerRollCounts = {};
     switchScreen('game');
     showNotification('Game started!', 'success');
 });
 
 socket.on('dice-rolled', (result) => {
+    // Track roll statistics
+    totalRolls++;
+    if (result.player) {
+        if (!playerRollCounts[result.player.persistentId]) {
+            playerRollCounts[result.player.persistentId] = 0;
+        }
+        playerRollCounts[result.player.persistentId]++;
+    }
+
     // Use the player data from the result instead of searching gameState
     // This prevents race conditions when game-state hasn't updated yet
     const rollingPlayer = result.player;
-    
+
     if (!rollingPlayer) {
         console.error('No player data in dice-rolled result:', result);
         return;
@@ -363,14 +740,13 @@ socket.on('dice-rolled', (result) => {
     drawBoard();
     
     // Show dice animation
+    diceAnimationInProgress = true;
     animateDiceRoll(result.diceRoll, () => {
-        lastRollDisplay.textContent = `🎲 Rolled: ${result.diceRoll}`;
-        
         // Start player movement animation
         const oldPosition = result.oldPosition;
         const newPosition = result.newPosition;
         const hasSnakeOrLadder = result.snake || result.ladder;
-        
+
         // Start player movement animation
         animatePlayerMovement(
             rollingPlayer.persistentId,
@@ -378,29 +754,33 @@ socket.on('dice-rolled', (result) => {
             newPosition,
             result.diceRoll,
             hasSnakeOrLadder,
+            result.snake,
+            result.ladder,
             () => {
                 // Animation complete - unlock the player position
                 delete playerAnimations[rollingPlayer.persistentId];
-                
-                // Show snake or ladder notification with sound
+                diceAnimationInProgress = false; // Clear dice animation flag
+
+                // Show the roll result after all animations are complete
+                lastRollDisplay.textContent = `🎲 Rolled: ${result.diceRoll}`;
+
+                // Show snake or ladder notification (sound already played)
                 if (result.snake) {
-                    playSound('downSnake');
                     showNotification(`🐍 Snake! Slide down ${result.snake.from} → ${result.snake.to}`, 'info');
                 } else if (result.ladder) {
-                    playSound('climbLadder');
                     showNotification(`🪜 Ladder! Climb up ${result.ladder.from} → ${result.ladder.to}`, 'success');
                 } else if (result.anotherTurn) {
                     showNotification(`🎲 Rolled a 6! ${rollingPlayer.name} gets another turn!`, 'success');
                 }
-                
+
                 // Check for winner
                 if (result.winner) {
                     setTimeout(() => {
-                        winnerName.textContent = `${result.winner.name}`;
-                        winnerModal.classList.add('active');
+                        // Show enhanced winner modal with statistics
+                        showWinnerModal(result.winner);
                     }, 500);
                 }
-                
+
                 // Update button states based on whose turn it is now
                 setTimeout(() => {
                     updateGameScreen();
@@ -412,6 +792,10 @@ socket.on('dice-rolled', (result) => {
 
 socket.on('game-reset', () => {
     winnerModal.classList.remove('active');
+    // Reset statistics for new game
+    totalRolls = 0;
+    playerRollCounts = {};
+    diceAnimationInProgress = false; // Reset dice animation flag
     switchScreen('lobby');
     showNotification('Game has been reset', 'info');
 });
@@ -425,6 +809,119 @@ socket.on('error', ({ message }) => {
     }
     showNotification(message, 'error');
 });
+
+socket.on('games-discovered', (data) => {
+    lastDiscoveryTime = Date.now();
+    const serverKey = `${data.serverIP}:${data.serverPort}`;
+
+    // Update discovered games
+    discoveredGames.set(serverKey, {
+        ...data,
+        games: data.games.map(game => ({
+            ...game,
+            serverIP: data.serverIP,
+            serverPort: data.serverPort
+        }))
+    });
+
+    updateLocalGamesList();
+    showNotification(`Found ${data.games.length} local game(s)`, 'success');
+});
+
+// Listen for game broadcasts (passive discovery)
+socket.on('game-broadcast', (data) => {
+    const serverKey = `${data.serverIP}:${data.serverPort}`;
+
+    // Only update if it's been more than 5 seconds since last discovery
+    if (Date.now() - lastDiscoveryTime > 5000) {
+        discoveredGames.set(serverKey, {
+            ...data,
+            games: data.games.map(game => ({
+                ...game,
+                serverIP: data.serverIP,
+                serverPort: data.serverPort
+            }))
+        });
+
+        updateLocalGamesList();
+    }
+});
+
+// Player customization helper functions
+function updatePlayerPreview() {
+    previewPlayer.style.backgroundColor = selectedColor;
+    previewIcon.textContent = selectedIcon;
+}
+
+function checkForConflicts(players, excludePlayerId = null) {
+    const conflicts = [];
+    players.forEach(player => {
+        if (player.id !== excludePlayerId) {
+            if (player.color === selectedColor && player.icon === selectedIcon) {
+                conflicts.push({
+                    type: 'both',
+                    player: player.name,
+                    color: selectedColor,
+                    icon: selectedIcon
+                });
+            } else if (player.color === selectedColor) {
+                conflicts.push({
+                    type: 'color',
+                    player: player.name,
+                    color: selectedColor
+                });
+            } else if (player.icon === selectedIcon) {
+                conflicts.push({
+                    type: 'icon',
+                    player: player.name,
+                    icon: selectedIcon
+                });
+            }
+        }
+    });
+    return conflicts;
+}
+
+function showConflictModal(conflicts) {
+    let message = 'Your player customization conflicts with other players:\n\n';
+
+    conflicts.forEach(conflict => {
+        if (conflict.type === 'both') {
+            message += `• ${conflict.player} has the same color AND icon\n`;
+        } else if (conflict.type === 'color') {
+            message += `• ${conflict.player} has the same color\n`;
+        } else if (conflict.type === 'icon') {
+            message += `• ${conflict.player} has the same icon\n`;
+        }
+    });
+
+    message += '\nWould you like to choose different colors/icons, or keep your choice?';
+
+    conflictMessage.textContent = message;
+    conflictModal.classList.add('active');
+}
+
+function executeJoinAction(action) {
+    if (action.type === 'create-room') {
+        const discoverable = enableDiscoveryCheckbox.checked;
+        const hostname = discoverable ? `${action.playerName}'s Game` : null;
+
+        socket.emit('create-room', {
+            playerName: action.playerName,
+            discoverable,
+            hostname,
+            playerColor: selectedColor,
+            playerIcon: selectedIcon
+        });
+    } else if (action.type === 'join-room') {
+        socket.emit('join-room', {
+            roomId: action.roomId,
+            playerName: action.playerName,
+            playerColor: selectedColor,
+            playerIcon: selectedIcon
+        });
+    }
+}
 
 // Animation helper functions
 function easeInOutQuad(t) {
@@ -460,21 +957,28 @@ function animatePlayerPosition(playerId, fromPos, toPos, duration, onComplete) {
     animate();
 }
 
-function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadder, onComplete) {
+function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadder, snake, ladder, onComplete) {
     animationInProgress = true;
-    
+
     // Step 1: Animate normal movement
     const steps = [];
     for (let i = 1; i <= diceRoll; i++) {
         steps.push(startPos + i);
     }
-    
+
     function animateStep(stepIndex) {
         if (stepIndex >= steps.length) {
             // All steps done, check for snake or ladder
             if (snakeOrLadder) {
                 // Add a brief pause before snake/ladder animation
                 setTimeout(() => {
+                    // Play snake/ladder sound when animation starts
+                    if (snake) {
+                        playSound('downSnake');
+                    } else if (ladder) {
+                        playSound('climbLadder');
+                    }
+
                     animatePlayerPosition(
                         playerId,
                         steps[steps.length - 1],
@@ -578,7 +1082,22 @@ function switchScreen(screen) {
     welcomeScreen.classList.remove('active');
     lobbyScreen.classList.remove('active');
     gameScreen.classList.remove('active');
-    
+
+    // Stop camera animation when leaving game screen
+    if (screen !== 'game') {
+        stopCameraAnimation();
+        followCameraEnabled = false;
+        cameraZoom = cameraTargetZoom = 1.8; // Reset zoom
+        mobileCameraBtn.classList.remove('active');
+        updateCameraButtonIcon();
+    }
+
+    // Handle mobile scroll prevention
+    const isMobile = window.innerWidth <= 768;
+    if (isMobile) {
+        document.body.classList.remove('game-active-mobile');
+    }
+
     switch(screen) {
         case 'welcome':
             welcomeScreen.classList.add('active');
@@ -588,7 +1107,10 @@ function switchScreen(screen) {
             break;
         case 'game':
             gameScreen.classList.add('active');
-            initializeMobileUI(); // Set up mobile UI state
+            // Prevent scrolling during gameplay on mobile
+            if (isMobile) {
+                document.body.classList.add('game-active-mobile');
+            }
             // Resize canvas after screen switch to ensure proper dimensions
             setTimeout(() => {
                 resizeCanvas();
@@ -610,7 +1132,9 @@ function updateLobby() {
         const isCurrentPlayer = player.id === socket.id;
         
         playerItem.innerHTML = `
-            <div class="player-color" style="background-color: ${player.color}"></div>
+            <div class="player-color" style="background-color: ${player.color}">
+                <span class="player-icon">${player.icon || player.name.charAt(0).toUpperCase()}</span>
+            </div>
             <div class="player-info">
                 <div class="player-name">${player.name}${isCurrentPlayer ? ' (You)' : ''}</div>
             </div>
@@ -644,7 +1168,7 @@ function updateLobby() {
 
 function updateGameScreen() {
     if (!gameState) return;
-    
+
     // Update current turn display
     const currentTurnPlayer = gameState.players[gameState.currentTurn];
     currentTurnDisplay.innerHTML = `
@@ -652,31 +1176,75 @@ function updateGameScreen() {
             ${currentTurnPlayer.name}'s Turn
         </div>
     `;
-    
-    // Update last roll display
-    if (gameState.lastRoll) {
-        lastRollDisplay.textContent = `🎲 Last Roll: ${gameState.lastRoll}`;
-    } else {
-        lastRollDisplay.textContent = '🎲 No rolls yet';
+
+    // Update last roll display (only if not in dice animation to preserve suspense)
+    if (!diceAnimationInProgress) {
+        if (gameState.lastRoll) {
+            lastRollDisplay.textContent = `🎲 Last Roll: ${gameState.lastRoll}`;
+        } else {
+            lastRollDisplay.textContent = '🎲 No rolls yet';
+        }
     }
-    
-    // Update scoreboard
+
+    // Update mobile top bar
+    mobileCurrentTurn.innerHTML = `
+        <div style="color: ${currentTurnPlayer.color}">
+            ${currentTurnPlayer.name}'s Turn
+        </div>
+    `;
+
+    // Update mobile last roll display (only if not in dice animation)
+    if (!diceAnimationInProgress) {
+        if (gameState.lastRoll) {
+            mobileLastRoll.textContent = `🎲 Last Roll: ${gameState.lastRoll}`;
+        } else {
+            mobileLastRoll.textContent = '🎲 No rolls yet';
+        }
+    }
+
+    // Update scoreboard (desktop)
     scoreboardList.innerHTML = '';
     gameState.players.forEach((player, index) => {
         const scoreboardItem = document.createElement('div');
         scoreboardItem.className = `scoreboard-item ${index === gameState.currentTurn ? 'active' : ''}`;
-        
+
         scoreboardItem.innerHTML = `
-            <div class="scoreboard-color" style="background-color: ${player.color}"></div>
+            <div class="scoreboard-color" style="background-color: ${player.color}">
+                <span class="scoreboard-icon">${player.icon || player.name.charAt(0).toUpperCase()}</span>
+            </div>
             <div class="scoreboard-details">
                 <div class="scoreboard-name">${player.name}</div>
                 <div class="scoreboard-position">Position: ${player.position}</div>
             </div>
         `;
-        
+
         scoreboardList.appendChild(scoreboardItem);
     });
-    
+
+    // Update mobile scoreboard
+    mobileScoreboardList.innerHTML = '';
+    gameState.players.forEach((player, index) => {
+        const mobileScoreboardItem = document.createElement('div');
+        mobileScoreboardItem.className = 'mobile-scoreboard-item';
+
+        if (index === gameState.currentTurn) {
+            mobileScoreboardItem.style.border = '2px solid var(--accent-color)';
+            mobileScoreboardItem.style.background = 'rgba(240, 147, 251, 0.1)';
+        }
+
+        mobileScoreboardItem.innerHTML = `
+            <div class="mobile-scoreboard-color" style="background-color: ${player.color}">
+                <span>${player.icon || player.name.charAt(0).toUpperCase()}</span>
+            </div>
+            <div class="mobile-scoreboard-details">
+                <div class="mobile-scoreboard-name">${player.name}</div>
+                <div class="mobile-scoreboard-position">Pos: ${player.position}</div>
+            </div>
+        `;
+
+        mobileScoreboardList.appendChild(mobileScoreboardItem);
+    });
+
     // Enable/disable roll button (both desktop and mobile)
     const isMyTurn = currentPlayer && currentTurnPlayer.persistentId === currentPlayer.persistentId;
     if (isMyTurn && !gameState.winner && !animationInProgress) {
@@ -686,7 +1254,7 @@ function updateGameScreen() {
         rollDiceBtn.disabled = true;
         mobileRollBtn.disabled = true;
     }
-    
+
     // Only redraw if no animation is in progress
     if (!animationInProgress && Object.keys(playerAnimations).length === 0) {
         drawBoard();
@@ -698,24 +1266,261 @@ function showNotification(message, type = 'info') {
     if (notification.timeout) {
         clearTimeout(notification.timeout);
     }
-    
+
     notification.textContent = message;
     notification.className = `notification ${type} show`;
-    
+
     notification.timeout = setTimeout(() => {
         notification.classList.remove('show');
     }, 3500);
 }
 
+function updateLocalGamesList() {
+    const allGames = [];
+
+    // Collect all games from all servers
+    discoveredGames.forEach(serverData => {
+        serverData.games.forEach(game => {
+            allGames.push(game);
+        });
+    });
+
+    if (allGames.length === 0) {
+        localGamesList.innerHTML = `
+            <div class="no-games-message">
+                <span class="no-games-icon">🔍</span>
+                <p>No local games found</p>
+                <p class="no-games-hint">Create a discoverable game to see it here</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Sort by creation time (newest first)
+    allGames.sort((a, b) => b.createdAt - a.createdAt);
+
+    localGamesList.innerHTML = '';
+    allGames.forEach(game => {
+        const gameItem = document.createElement('div');
+        gameItem.className = 'local-game-item';
+
+        const timeAgo = getTimeAgo(game.createdAt);
+        const serverDisplay = `${game.serverIP}:${game.serverPort}`;
+
+        gameItem.innerHTML = `
+            <div class="game-info">
+                <div class="game-host">${game.hostname}</div>
+                <div class="game-details">
+                    <span class="game-room-code">${game.roomId}</span>
+                    <span class="game-players">${game.playerCount}/${game.maxPlayers} players</span>
+                </div>
+                <div class="game-meta">
+                    <span class="game-time">${timeAgo}</span>
+                    <span class="game-server">${serverDisplay}</span>
+                </div>
+            </div>
+            <button class="btn btn-small btn-join" onclick="joinLocalGame('${game.roomId}', '${game.serverIP}', ${game.serverPort})">
+                Join
+            </button>
+        `;
+
+        localGamesList.appendChild(gameItem);
+    });
+}
+
+function getTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function joinLocalGame(roomId, serverIP, serverPort) {
+    const name = playerNameInput.value.trim();
+    if (!name) {
+        showNotification('Please enter your name first', 'error');
+        playerNameInput.focus();
+        return;
+    }
+
+    const currentPort = parseInt(window.location.port) || 80;
+    const currentHost = window.location.hostname;
+
+    // Check if the game is on the same server (handle localhost vs IP differences)
+    const isSameServer = (serverPort === currentPort) &&
+        (serverIP === currentHost ||
+         serverIP === 'localhost' ||
+         currentHost === 'localhost' ||
+         serverIP === '127.0.0.1' ||
+         currentHost === '127.0.0.1');
+
+    if (isSameServer) {
+        // Same server - join directly with conflict check
+        if (gameState && gameState.players) {
+            const conflicts = checkForConflicts(gameState.players);
+            if (conflicts.length > 0) {
+                pendingJoinAction = {
+                    type: 'join-room',
+                    roomId: roomId,
+                    playerName: name
+                };
+                showConflictModal(conflicts);
+                return;
+            }
+        }
+
+        showNotification(`Joining game ${roomId}...`, 'info');
+        executeJoinAction({
+            type: 'join-room',
+            roomId: roomId,
+            playerName: name
+        });
+    } else {
+        // Different server - open new tab with auto-join parameters
+        const url = `http://${serverIP}:${serverPort}/?autoJoin=true&room=${roomId}&name=${encodeURIComponent(name)}&color=${encodeURIComponent(selectedColor)}&icon=${encodeURIComponent(selectedIcon)}`;
+        window.open(url, '_blank');
+        showNotification(`Opening game on ${serverIP}:${serverPort}`, 'info');
+    }
+}
+
+// Camera functions for mobile follow camera
+function updateCameraTarget() {
+    if (!followCameraEnabled || !gameState || !gameState.players || gameState.players.length === 0) return;
+
+    // Collect all player positions
+    const playerPositions = [];
+    let totalX = 0;
+    let totalY = 0;
+
+    gameState.players.forEach(player => {
+        let pos;
+
+        // Check if player has an active animation (same logic as drawPlayer)
+        const animation = playerAnimations[player.persistentId];
+        if (animation && animation.locked) {
+            // Player is locked in animation - use animated position
+            const fromPos = getPosition(animation.from);
+            const toPos = getPosition(animation.to);
+            pos = {
+                x: fromPos.x + (toPos.x - fromPos.x) * animation.progress,
+                y: fromPos.y + (toPos.y - fromPos.y) * animation.progress
+            };
+        } else {
+            // Use actual game state position
+            pos = getPosition(player.position);
+        }
+
+        playerPositions.push(pos);
+        totalX += pos.x;
+        totalY += pos.y;
+    });
+
+    // Calculate center point of all players
+    cameraTargetX = totalX / playerPositions.length;
+    cameraTargetY = totalY / playerPositions.length;
+
+    // Calculate optimal zoom based on player spread
+    calculateOptimalZoom(playerPositions);
+}
+
+function calculateOptimalZoom(playerPositions) {
+    if (playerPositions.length === 0) return;
+
+    // Find the bounding box that contains all players
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    playerPositions.forEach(pos => {
+        minX = Math.min(minX, pos.x);
+        maxX = Math.max(maxX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y);
+    });
+
+    // Calculate the spread of players
+    const spreadX = maxX - minX;
+    const spreadY = maxY - minY;
+    const maxSpread = Math.max(spreadX, spreadY);
+
+    // Add padding to ensure players aren't on the edge
+    const padding = 100; // Pixels of padding around players
+    const requiredSpread = maxSpread + padding;
+
+    // Calculate canvas dimensions
+    const isMobile = window.innerWidth <= 768;
+    const canvasWidth = canvas.width / (window.devicePixelRatio || 1);
+    const canvasHeight = canvas.height / (window.devicePixelRatio || 1);
+    const minCanvasDimension = Math.min(canvasWidth, canvasHeight);
+
+    // Calculate required zoom to fit all players
+    const requiredZoom = minCanvasDimension / requiredSpread;
+
+    // Clamp zoom between min and max values
+    cameraTargetZoom = Math.max(cameraMinZoom, Math.min(cameraMaxZoom, requiredZoom));
+}
+
+function updateCamera() {
+    if (!followCameraEnabled) return;
+
+    // Smoothly move camera towards target position
+    cameraCurrentX += (cameraTargetX - cameraCurrentX) * cameraSmoothing;
+    cameraCurrentY += (cameraTargetY - cameraCurrentY) * cameraSmoothing;
+
+    // Smoothly adjust zoom towards target zoom
+    cameraZoom += (cameraTargetZoom - cameraZoom) * cameraZoomSmoothing;
+
+    // Update camera target to follow current player positions
+    updateCameraTarget();
+}
+
+function updateCameraButtonIcon() {
+    // Simple toggle - always show camera icon
+    const cameraIcon = mobileCameraBtn.querySelector('.camera-icon');
+    if (cameraIcon) {
+        if (followCameraEnabled) {
+            cameraIcon.textContent = '🔍'; // Magnifying glass when active
+            mobileCameraBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+        } else {
+            cameraIcon.textContent = '📷'; // Camera when inactive
+            mobileCameraBtn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+        }
+    }
+}
+
+function applyCameraTransform(ctx) {
+    if (!followCameraEnabled) return;
+
+    const isMobile = window.innerWidth <= 768;
+    if (!isMobile) return;
+
+    // Move canvas origin to center on player with zoom
+    const canvasWidth = canvas.width / (window.devicePixelRatio || 1);
+    const canvasHeight = canvas.height / (window.devicePixelRatio || 1);
+
+    // Translate to center the camera on the player, then scale for zoom
+    ctx.translate(canvasWidth / 2, canvasHeight / 2);
+    ctx.scale(cameraZoom, cameraZoom);
+    ctx.translate(-cameraCurrentX, -cameraCurrentY);
+}
+
 // Board drawing functions
 function drawBoard() {
     if (!gameState) return;
-    
+
     const boardSize = 10;
     const cellSize = canvasLogicalSize / boardSize;
-    
+
+    // Update camera position for smooth following
+    updateCamera();
+
     // Clear canvas
     ctx.clearRect(0, 0, canvasLogicalSize, canvasLogicalSize);
+
+    // Apply camera transform if enabled (mobile only)
+    ctx.save();
+    applyCameraTransform(ctx);
     
     // Draw cells
     for (let row = 0; row < boardSize; row++) {
@@ -787,6 +1592,40 @@ function drawBoard() {
             drawPlayer(player, index);
         }
     });
+
+    // Restore canvas state (remove camera transform)
+    ctx.restore();
+}
+
+// Continuous camera animation loop for smooth following
+let cameraAnimationId = null;
+let lastCameraUpdate = 0;
+
+function startCameraAnimation() {
+    if (cameraAnimationId) return; // Already running
+
+    function animateCamera(timestamp) {
+        if (followCameraEnabled && gameState && gameState.started) {
+            // Limit camera updates to 60fps for performance
+            if (timestamp - lastCameraUpdate > 16) { // ~60fps
+                updateCamera();
+                drawBoard();
+                lastCameraUpdate = timestamp;
+            }
+            cameraAnimationId = requestAnimationFrame(animateCamera);
+        } else {
+            cameraAnimationId = null; // Stop animation
+        }
+    }
+
+    animateCamera(0);
+}
+
+function stopCameraAnimation() {
+    if (cameraAnimationId) {
+        cancelAnimationFrame(cameraAnimationId);
+        cameraAnimationId = null;
+    }
 }
 
 function getCellNumber(row, col) {
@@ -1087,7 +1926,7 @@ function drawPlayer(player, index) {
     }
     
     const cellSize = canvasLogicalSize / 10;
-    let playerRadius = cellSize * 0.18;
+    let playerRadius = cellSize * 0.216; // 20% bigger than before (0.18 * 1.2 = 0.216)
     
     // Add bounce and scale effect during animation
     if (isAnimating) {
@@ -1099,7 +1938,7 @@ function drawPlayer(player, index) {
     // Offset for multiple players on same cell
     const offset = (index - (gameState.players.length - 1) / 2) * (playerRadius * 1.2);
     const centerX = pos.x + offset;
-    const centerY = pos.y + cellSize * 0.2;
+    const centerY = pos.y;
     
     // Draw player shadow
     ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
@@ -1143,17 +1982,25 @@ function drawPlayer(player, index) {
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     
-    // Draw player name initial
+    // Draw player custom icon or name initial as fallback
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${playerRadius * 1.1}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
+
     // Add text shadow for better readability
     ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
     ctx.shadowBlur = 4;
-    ctx.fillText(player.name.charAt(0).toUpperCase(), centerX, centerY);
-    
+
+    if (player.icon) {
+        // Draw custom icon
+        ctx.font = `${playerRadius * 1.6}px Arial`;
+        ctx.fillText(player.icon, centerX, centerY);
+    } else {
+        // Fallback to name initial
+        ctx.font = `bold ${playerRadius * 1.1}px Arial`;
+        ctx.fillText(player.name.charAt(0).toUpperCase(), centerX, centerY);
+    }
+
     // Reset shadow
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
@@ -1202,16 +2049,101 @@ function resizeCanvas() {
 
 window.addEventListener('resize', () => {
     resizeCanvas();
-    // Reinitialize mobile UI on orientation change or resize
-    if (gameScreen.classList.contains('active')) {
-        initializeMobileUI();
+
+    // Handle scroll behavior on resize
+    const isMobile = window.innerWidth <= 768;
+    const isGameActive = gameScreen.classList.contains('active');
+
+    if (isMobile && isGameActive) {
+        document.body.classList.add('game-active-mobile');
+    } else {
+        document.body.classList.remove('game-active-mobile');
     }
 });
 window.addEventListener('load', resizeCanvas);
 
+// URL parameter parsing for auto-join
+function getUrlParameters() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+        autoJoin: params.get('autoJoin') === 'true',
+        room: params.get('room'),
+        name: params.get('name'),
+        color: params.get('color'),
+        icon: params.get('icon')
+    };
+}
+
 // Initialize
 // Initialize dice on page load
 initializeDice();
+
+// Initialize local games list
+updateLocalGamesList();
+
+// Initialize default selected customization options
+document.querySelector('.color-option[data-color="#FF6B6B"]').classList.add('selected');
+document.querySelector('.icon-option[data-icon="🎮"]').classList.add('selected');
+updatePlayerPreview();
+
+// Check for auto-join parameters
+const urlParams = getUrlParameters();
+if (urlParams.autoJoin && urlParams.room && urlParams.name) {
+    // Auto-join functionality
+    playerNameInput.value = urlParams.name;
+
+    // Set custom color and icon if provided
+    if (urlParams.color) {
+        selectedColor = urlParams.color;
+        // Update UI to reflect selected color
+        document.querySelectorAll('.color-option.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+        const colorOption = document.querySelector(`.color-option[data-color="${urlParams.color}"]`);
+        if (colorOption) {
+            colorOption.classList.add('selected');
+        }
+    }
+
+    if (urlParams.icon) {
+        selectedIcon = urlParams.icon;
+        // Update UI to reflect selected icon
+        document.querySelectorAll('.icon-option.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+        const iconOption = document.querySelector(`.icon-option[data-icon="${urlParams.icon}"]`);
+        if (iconOption) {
+            iconOption.classList.add('selected');
+        }
+    }
+
+    // Update preview
+    updatePlayerPreview();
+
+    // Add auto-join connect handler
+    let autoJoinHandled = false;
+    socket.on('connect', () => {
+        if (!autoJoinHandled) {
+            autoJoinHandled = true;
+            setTimeout(() => {
+                showNotification(`Auto-joining room ${urlParams.room}...`, 'info');
+                socket.emit('join-room', {
+                    roomId: urlParams.room,
+                    playerName: urlParams.name,
+                    playerColor: selectedColor,
+                    playerIcon: selectedIcon
+                });
+            }, 500);
+        }
+    });
+} else {
+    // Auto-discover games on page load (only if not auto-joining)
+    setTimeout(() => {
+        if (welcomeScreen.classList.contains('active')) {
+            refreshGamesBtn.click();
+        }
+    }, 2000);
+}
 
 // Check for existing session on page load
 const existingSession = loadSession();

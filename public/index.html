@@ -11,27 +11,126 @@
         <!-- Welcome Screen -->
         <div id="welcome-screen" class="screen active">
             <div class="welcome-card">
-                <h1 class="title">🎲 Snakes & Ladders 🪜</h1>
-                <p class="subtitle">Play with friends over local network!</p>
-                
-                <div class="input-group">
-                    <input type="text" id="player-name" placeholder="Enter your name" maxlength="15" autocomplete="off">
+                <!-- Compact Header -->
+                <div class="compact-header">
+                    <h1 class="title">🎲 Snakes & Ladders</h1>
+                    <p class="subtitle">Multiplayer Game</p>
                 </div>
 
-                <div class="button-group">
-                    <button id="create-room-btn" class="btn btn-primary">
-                        <span class="btn-icon">🎮</span>
-                        Create Room
-                    </button>
-                    <button id="join-room-btn" class="btn btn-secondary">
-                        <span class="btn-icon">🚪</span>
-                        Join Room
-                    </button>
+                <!-- Player Setup - Compact Form -->
+                <div class="setup-container">
+                    <!-- Left Column: Info & Customization -->
+                    <div class="setup-left">
+                        <!-- Name Input -->
+                        <div class="compact-section">
+                            <label class="compact-label">👤 Your Name</label>
+                            <input type="text" id="player-name" placeholder="Enter name" maxlength="15" autocomplete="off">
+                        </div>
+
+                        <!-- Customization -->
+                        <div class="compact-section">
+                            <div class="section-header-toggle" data-section="color">
+                                <label class="compact-label">🎨 Color</label>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div class="color-selection collapsible-content collapsed">
+                            <div class="color-option selected" data-color="#FF6B6B" style="background-color: #FF6B6B"></div>
+                            <div class="color-option" data-color="#4ECDC4" style="background-color: #4ECDC4"></div>
+                            <div class="color-option" data-color="#45B7D1" style="background-color: #45B7D1"></div>
+                            <div class="color-option" data-color="#FFA07A" style="background-color: #FFA07A"></div>
+                            <div class="color-option" data-color="#98D8C8" style="background-color: #98D8C8"></div>
+                            <div class="color-option" data-color="#F7DC6F" style="background-color: #F7DC6F"></div>
+                            <div class="color-option" data-color="#BB8FCE" style="background-color: #BB8FCE"></div>
+                            <div class="color-option" data-color="#85C1E2" style="background-color: #85C1E2"></div>
+                            <div class="color-option" data-color="#F8B739" style="background-color: #F8B739"></div>
+                            <div class="color-option" data-color="#52BE80" style="background-color: #52BE80"></div>
+                            <div class="color-option" data-color="#EC7063" style="background-color: #EC7063"></div>
+                            <div class="color-option" data-color="#AF7AC5" style="background-color: #AF7AC5"></div>
+                        </div>
+                    </div>
+
+                        <div class="compact-section">
+                            <div class="section-header-toggle" data-section="icon">
+                                <label class="compact-label">✨ Icon</label>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div class="icon-selection collapsible-content collapsed">
+                            <div class="icon-option selected" data-icon="🎮">🎮</div>
+                            <div class="icon-option" data-icon="🎯">🎯</div>
+                            <div class="icon-option" data-icon="🎲">🎲</div>
+                            <div class="icon-option" data-icon="🎪">🎪</div>
+                            <div class="icon-option" data-icon="🎨">🎨</div>
+                            <div class="icon-option" data-icon="🎭">🎭</div>
+                            <div class="icon-option" data-icon="🎪">🎪</div>
+                            <div class="icon-option" data-icon="🎸">🎸</div>
+                            <div class="icon-option" data-icon="🎺">🎺</div>
+                            <div class="icon-option" data-icon="🏆">🏆</div>
+                            <div class="icon-option" data-icon="⭐">⭐</div>
+                            <div class="icon-option" data-icon="🌟">🌟</div>
+                            <div class="icon-option" data-icon="💫">💫</div>
+                            <div class="icon-option" data-icon="🔥">🔥</div>
+                            <div class="icon-option" data-icon="⚡">⚡</div>
+                            <div class="icon-option" data-icon="🌈">🌈</div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                    <!-- Right Column: Preview & Actions -->
+                    <div class="setup-right">
+                        <!-- Player Preview -->
+                        <div class="compact-preview">
+                            <div class="preview-player" id="preview-player">
+                                <span class="preview-icon" id="preview-icon">🎮</span>
+                            </div>
+                            <div class="preview-name" id="preview-name">Player</div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="quick-actions">
+
+                            <button id="create-room-btn" class="action-btn primary">
+                                <span class="btn-icon">🎮</span>
+                                <span>Create Game</span>
+                            </button>
+                            <button id="join-room-btn" class="action-btn secondary">
+                                <span class="btn-icon">🚪</span>
+                                <span>Join Game</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <div id="join-room-input" class="join-room-section" style="display: none;">
+                <!-- Join Room Code (Hidden by default) -->
+                <div id="join-room-input" class="join-section" style="display: none;">
                     <input type="text" id="room-code" placeholder="Enter room code" maxlength="6" autocomplete="off">
-                    <button id="join-submit-btn" class="btn btn-accent">Join</button>
+                    <button id="join-submit-btn" class="action-btn accent">Join →</button>
+                </div>
+
+                <!-- Options -->
+                <div class="options-bar">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" id="enable-discovery">
+                        <span class="checkmark"></span>
+                        <span class="checkbox-text">Discoverable</span>
+                    </label>
+                </div>
+
+                <!-- Local Games -->
+                <div id="local-games-section" class="local-games">
+                    <div class="games-header">
+                        <span class="games-title">🔍 Local Games</span>
+                        <button id="refresh-games-btn" class="btn-refresh">
+                            <span class="refresh-icon">🔄</span>
+                        </button>
+                    </div>
+                    <div id="local-games-list" class="local-games-list">
+                        <div class="no-games-message">
+                            <span class="no-games-icon">🔍</span>
+                            <p>No local games found</p>
+                            <p class="no-games-hint">Create a discoverable game to see it here</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -67,6 +166,33 @@
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
             <div class="game-container">
+                <!-- Mobile Top Bar -->
+                <div class="mobile-top-bar" id="mobile-top-bar">
+                    <div class="mobile-turn-info">
+                        <div id="mobile-current-turn" class="mobile-current-turn"></div>
+                        <div id="mobile-last-roll" class="mobile-last-roll"></div>
+                    </div>
+                    <div class="mobile-scoreboard">
+                        <div id="mobile-scoreboard-list" class="mobile-scoreboard-list"></div>
+                    </div>
+                    <!-- Mobile Settings Dropdown -->
+                    <div class="mobile-settings-dropdown">
+                        <button id="mobile-settings-btn" class="mobile-settings-btn">
+                            <span class="settings-icon">⚙️</span>
+                        </button>
+                        <div id="mobile-settings-menu" class="mobile-settings-menu">
+                            <button id="mobile-reset-btn" class="mobile-menu-item">
+                                <span class="menu-icon">🔄</span>
+                                Reset Game
+                            </button>
+                            <button id="mobile-leave-btn" class="mobile-menu-item leave">
+                                <span class="menu-icon">🚪</span>
+                                Leave Game
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="game-sidebar" id="game-sidebar">
                     <div class="game-info">
                         <h3 class="game-title">🎲 Snakes & Ladders</h3>
@@ -89,12 +215,10 @@
                     </div>
                 </div>
 
-                <!-- Mobile UI Toggle Button -->
-                <button id="toggle-ui-btn" class="toggle-ui-btn">
-                    <span class="toggle-icon">☰</span>
+                <!-- Mobile Floating Buttons -->
+                <button id="mobile-camera-btn" class="mobile-camera-btn">
+                    <span class="camera-icon">📷</span>
                 </button>
-
-                <!-- Mobile Floating Roll Button -->
                 <button id="mobile-roll-btn" class="mobile-roll-btn">
                     <span class="dice-icon">🎲</span>
                 </button>
@@ -107,16 +231,86 @@
 
         <!-- Winner Modal -->
         <div id="winner-modal" class="modal">
-            <div class="modal-content">
-                <div class="winner-animation">🎉</div>
-                <h2 id="winner-name" class="winner-title"></h2>
-                <p class="winner-subtitle">Won the game!</p>
-                <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+            <div class="winner-modal-content">
+                <!-- Confetti Background -->
+                <div class="confetti-container">
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                </div>
+
+                <!-- Trophy Animation -->
+                <div class="trophy-container">
+                    <div class="trophy">🏆</div>
+                    <div class="trophy-glow"></div>
+                </div>
+
+                <!-- Winner Info -->
+                <div class="winner-info">
+                    <div class="winner-crown">👑</div>
+                    <h1 id="winner-name" class="winner-title"></h1>
+                    <div class="winner-subtitle">Champion!</div>
+                    <div class="winner-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Final Position</span>
+                            <span class="stat-value">100</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Rolled</span>
+                            <span id="winner-rolls" class="stat-value">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="winner-actions">
+                    <button id="play-again-btn" class="btn btn-win-primary">
+                        <span class="btn-icon">🎮</span>
+                        Play Again
+                    </button>
+                    <button id="new-game-btn" class="btn btn-win-secondary">
+                        <span class="btn-icon">🎯</span>
+                        New Game
+                    </button>
+                </div>
+
+                <!-- Sparkle Effects -->
+                <div class="sparkle sparkle-1">✨</div>
+                <div class="sparkle sparkle-2">✨</div>
+                <div class="sparkle sparkle-3">✨</div>
+                <div class="sparkle sparkle-4">✨</div>
+                <div class="sparkle sparkle-5">✨</div>
+                <div class="sparkle sparkle-6">✨</div>
             </div>
         </div>
 
         <!-- Notification Toast -->
         <div id="notification" class="notification"></div>
+
+        <!-- Color Conflict Modal -->
+        <div id="conflict-modal" class="modal">
+            <div class="modal-content">
+                <div class="conflict-icon">⚠️</div>
+                <h2 class="conflict-title">Player Conflict Detected!</h2>
+                <p id="conflict-message" class="conflict-message"></p>
+                <div class="conflict-options">
+                    <button id="keep-customization-btn" class="btn btn-secondary">Keep My Choice</button>
+                    <button id="change-customization-btn" class="btn btn-primary">Choose Different</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Dice Animation -->
         <div id="dice-backdrop" class="dice-backdrop"></div>
