@@ -11,6 +11,7 @@ let isReconnecting = false;
 let animationInProgress = false;
 let playerAnimations = {};
 let diceAnimationInProgress = false; // Track when dice animation is happening
+let explosionAnimations = []; // Track active explosion animations
 
 // Game statistics
 let totalRolls = 0;
@@ -34,7 +35,8 @@ const sounds = {
     diceRoll: new Audio('/sounds/diceroll.mp3'),
     playerMove: new Audio('/sounds/playermove.mp3'),
     climbLadder: new Audio('/sounds/climbladder.mp3'),
-    downSnake: new Audio('/sounds/downsnake.mp3')
+    downSnake: new Audio('/sounds/downsnake.mp3'),
+    mineExplosion: new Audio('/sounds/mine.mp3')
 };
 
 // Preload sounds and set volume
@@ -46,6 +48,8 @@ sounds.climbLadder.preload = 'auto';
 sounds.climbLadder.volume = 0.3;
 sounds.downSnake.preload = 'auto';
 sounds.downSnake.volume = 0.3;
+sounds.mineExplosion.preload = 'auto';
+sounds.mineExplosion.volume = 0.6;
 
 // Helper function to play sound with error handling
 function playSound(soundName) {
@@ -96,10 +100,22 @@ const conflictMessage = document.getElementById('conflict-message');
 const keepCustomizationBtn = document.getElementById('keep-customization-btn');
 const changeCustomizationBtn = document.getElementById('change-customization-btn');
 
+// Dice control elements
+const diceControlModal = document.getElementById('dice-control-modal');
+const diceControlPowerBtn = document.getElementById('dice-control-power-btn');
+const targetPlayerSelect = document.getElementById('target-player-select');
+const diceValueControls = document.getElementById('dice-value-controls');
+const setControlBtn = document.getElementById('set-control-btn');
+const cancelControlBtn = document.getElementById('cancel-control-btn');
+
 // Player customization state
 let selectedColor = '#FF6B6B';
 let selectedIcon = '🎮';
 let pendingJoinAction = null;
+let selectedDiceCount = 1; // Default to 1 die
+let selectedSnakeThreshold = 3; // Default to 3 snakes for revenge power
+let minesEnabled = false; // Default mines disabled
+let minesCount = 5; // Default 5 mines
 
 // Initialize collapsible sections
 function initializeCollapsibleSections() {
@@ -193,9 +209,11 @@ const notification = document.getElementById('notification');
 const diceContainer = document.getElementById('dice-container');
 const diceElement = document.getElementById('dice');
 const diceBackdrop = document.getElementById('dice-backdrop');
+let currentDiceCount = 1; // Track current game's dice count
 
 // Mobile UI controls
 const mobileRollBtn = document.getElementById('mobile-roll-btn');
+const mobilePowerBtn = document.getElementById('mobile-power-btn');
 const gameSidebar = document.getElementById('game-sidebar');
 
 // Mobile settings dropdown
@@ -374,6 +392,86 @@ changeCustomizationBtn.addEventListener('click', () => {
     pendingJoinAction = null;
     // Focus back to customization area
     document.querySelector('.player-customization').scrollIntoView({ behavior: 'smooth' });
+});
+
+// Dice count selection event listeners
+const diceCountOptions = document.querySelectorAll('input[name="dice-count"]');
+diceCountOptions.forEach(option => {
+    option.addEventListener('change', (e) => {
+        selectedDiceCount = parseInt(e.target.value);
+        console.log('Dice count selected:', selectedDiceCount);
+    });
+});
+
+// Snake threshold selection event listeners
+const snakeThresholdOptions = document.querySelectorAll('input[name="snake-threshold"]');
+snakeThresholdOptions.forEach(option => {
+    option.addEventListener('change', (e) => {
+        selectedSnakeThreshold = parseInt(e.target.value);
+        console.log('Snake threshold selected:', selectedSnakeThreshold);
+    });
+});
+
+// Mines configuration event listeners
+const enableMinesCheckbox = document.getElementById('enable-mines');
+const minesConfig = document.getElementById('mines-config');
+const minesCountSlider = document.getElementById('mines-count');
+const minesCountValue = document.getElementById('mines-count-value');
+
+enableMinesCheckbox.addEventListener('change', (e) => {
+    minesEnabled = e.target.checked;
+    minesConfig.style.display = minesEnabled ? 'block' : 'none';
+    console.log('Mines enabled:', minesEnabled);
+});
+
+minesCountSlider.addEventListener('input', (e) => {
+    minesCount = parseInt(e.target.value);
+    minesCountValue.textContent = minesCount;
+    console.log('Mines count selected:', minesCount);
+});
+
+// Dice control event listeners
+diceControlPowerBtn.addEventListener('click', () => {
+    openDiceControlModal();
+});
+
+// Mobile power button event listener
+mobilePowerBtn.addEventListener('click', () => {
+    openDiceControlModal();
+});
+
+cancelControlBtn.addEventListener('click', () => {
+    diceControlModal.classList.remove('active');
+});
+
+setControlBtn.addEventListener('click', () => {
+    const targetPlayerId = targetPlayerSelect.value;
+    if (!targetPlayerId) {
+        showNotification('Please select a target player', 'error');
+        return;
+    }
+
+    // Collect dice values
+    const diceValues = [];
+    const diceInputs = diceValueControls.querySelectorAll('input');
+    
+    for (const input of diceInputs) {
+        const value = parseInt(input.value);
+        if (isNaN(value) || value < 1 || value > 6) {
+            showNotification('Dice values must be between 1 and 6', 'error');
+            return;
+        }
+        diceValues.push(value);
+    }
+
+    // Send to server
+    socket.emit('set-controlled-dice', {
+        roomId: currentRoom,
+        targetPlayerId: targetPlayerId,
+        diceValues: diceValues
+    });
+
+    diceControlModal.classList.remove('active');
 });
 
 // Discovery event listeners
@@ -650,6 +748,7 @@ socket.on('disconnected', () => {
     gameState = null;
     // Stop camera animation when leaving game
     stopCameraAnimation();
+    stopExplosionAnimation(); // Stop explosion animation loop
     followCameraEnabled = false;
     cameraZoom = cameraTargetZoom = 1.8; // Reset zoom
     diceAnimationInProgress = false; // Reset dice animation flag
@@ -683,6 +782,16 @@ socket.on('game-state', (state) => {
     // Store the incoming state but don't immediately update positions during animations
     const wasStarted = gameState && gameState.started;
     gameState = state;
+    // Update current dice count from game state
+    if (state.diceCount) {
+        currentDiceCount = state.diceCount;
+    }
+
+    // Clear temporary voids when server voids are updated (prevents duplicates)
+    if (state.voids && gameState.tempVoids) {
+        gameState.tempVoids = [];
+    }
+
     updateLobby();
     if (state.started) {
         updateGameScreen();
@@ -741,7 +850,9 @@ socket.on('dice-rolled', (result) => {
     
     // Show dice animation
     diceAnimationInProgress = true;
-    animateDiceRoll(result.diceRoll, () => {
+    // Use diceRolls array if available (for 2 dice), otherwise use diceRoll total
+    const diceToShow = result.diceRolls || result.diceRoll;
+    animateDiceRoll(diceToShow, () => {
         // Start player movement animation
         const oldPosition = result.oldPosition;
         const newPosition = result.newPosition;
@@ -764,13 +875,55 @@ socket.on('dice-rolled', (result) => {
                 // Show the roll result after all animations are complete
                 lastRollDisplay.textContent = `🎲 Rolled: ${result.diceRoll}`;
 
+                // Show controlled roll notification (only to controller)
+                if (result.wasControlled && currentPlayer && result.controllerPlayerId === currentPlayer.persistentId) {
+                    showNotification(`🐍⚡ Your controlled roll succeeded! ${rollingPlayer.name} rolled ${result.diceRoll}`, 'success');
+                }
+
+                // Show power granted notification
+                if (result.powerGranted && currentPlayer && rollingPlayer.persistentId === currentPlayer.persistentId) {
+                    const threshold = gameState.snakeThreshold || 3;
+                    showNotification(`🐍⚡ REVENGE POWER UNLOCKED! You've been bitten by ${threshold} snakes! Click the power button to control another player's dice!`, 'success');
+                }
+
+                // Show mine explosion notification (highest priority)
+                if (result.mine) {
+                    playSound('mineExplosion'); // Play mine explosion sound
+                    createExplosion(result.mine.position); // Trigger explosion animation
+                    showNotification(`💣💥 MINE EXPLOSION! Tile ${result.mine.position} destroyed! Fall to tile 1!`, 'error');
+
+                    // Add to temporary client-side voids for immediate visual feedback
+                    if (!gameState.tempVoids) {
+                        gameState.tempVoids = [];
+                    }
+                    gameState.tempVoids.push(result.mine.position);
+                }
+                // Show void fall notification
+                else if (result.voidFall) {
+                    playSound('downSnake'); // Use snake sound for falling into void
+                    if (result.voidFall.to === 1) {
+                        showNotification(`⚫ Fell into the void at tile ${result.voidFall.from}! Can't move back further, left at tile 1!`, 'error');
+                    } else {
+                        showNotification(`⚫ Fell into the void at tile ${result.voidFall.from}! Fall back to tile ${result.voidFall.to}!`, 'error');
+                    }
+                }
                 // Show snake or ladder notification (sound already played)
-                if (result.snake) {
+                else if (result.snake) {
                     showNotification(`🐍 Snake! Slide down ${result.snake.from} → ${result.snake.to}`, 'info');
                 } else if (result.ladder) {
                     showNotification(`🪜 Ladder! Climb up ${result.ladder.from} → ${result.ladder.to}`, 'success');
                 } else if (result.anotherTurn) {
-                    showNotification(`🎲 Rolled a 6! ${rollingPlayer.name} gets another turn!`, 'success');
+                    if (currentDiceCount === 2) {
+                        // Check if it's a double
+                        const diceRolls = result.diceRolls || [result.diceRoll];
+                        if (diceRolls.length === 2 && diceRolls[0] === diceRolls[1]) {
+                            showNotification(`🎲🎲 Rolled doubles (${diceRolls[0]}-${diceRolls[1]})! ${rollingPlayer.name} gets another turn!`, 'success');
+                        } else {
+                            showNotification(`🎲 ${rollingPlayer.name} gets another turn!`, 'success');
+                        }
+                    } else {
+                        showNotification(`🎲 Rolled a 6! ${rollingPlayer.name} gets another turn!`, 'success');
+                    }
                 }
 
                 // Check for winner
@@ -796,8 +949,14 @@ socket.on('game-reset', () => {
     totalRolls = 0;
     playerRollCounts = {};
     diceAnimationInProgress = false; // Reset dice animation flag
+    explosionAnimations = []; // Clear any active explosions
+    stopExplosionAnimation(); // Stop explosion animation loop
     switchScreen('lobby');
     showNotification('Game has been reset', 'info');
+});
+
+socket.on('dice-control-set', ({ targetPlayerName, diceValues }) => {
+    showNotification(`🐍⚡ Dice control set! ${targetPlayerName} will roll ${diceValues.join('-')} on their next turn...`, 'success');
 });
 
 socket.on('error', ({ message }) => {
@@ -911,7 +1070,11 @@ function executeJoinAction(action) {
             discoverable,
             hostname,
             playerColor: selectedColor,
-            playerIcon: selectedIcon
+            playerIcon: selectedIcon,
+            diceCount: selectedDiceCount,
+            snakeThreshold: selectedSnakeThreshold,
+            minesEnabled: minesEnabled,
+            minesCount: minesCount
         });
     } else if (action.type === 'join-room') {
         socket.emit('join-room', {
@@ -1030,12 +1193,39 @@ function setDiceFace(number) {
     diceElement.classList.add(`dice-face-${number}`);
 }
 
-// Dice animation function
-function animateDiceRoll(finalNumber, callback) {
-    // Initialize dice if not already done
-    if (diceElement.children.length !== 9) {
-        initializeDice();
-    }
+// Set dice face for a specific element
+function setDiceFaceForElement(element, number) {
+    // Remove all face classes
+    element.className = 'dice';
+    // Add the specific face class
+    element.classList.add(`dice-face-${number}`);
+}
+
+// Dice animation function - supports both single value and array of values
+function animateDiceRoll(diceValues, callback) {
+    // Convert single value to array for consistency
+    const valuesArray = Array.isArray(diceValues) ? diceValues : [diceValues];
+    
+    // Clear previous dice
+    diceContainer.innerHTML = '';
+    
+    // Create dice elements based on count
+    const diceElements = [];
+    valuesArray.forEach((val, index) => {
+        const diceDiv = document.createElement('div');
+        diceDiv.className = 'dice';
+        diceDiv.id = `dice-${index}`;
+        
+        // Initialize dice dots
+        for (let i = 0; i < 9; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'dice-dot';
+            diceDiv.appendChild(dot);
+        }
+        
+        diceContainer.appendChild(diceDiv);
+        diceElements.push(diceDiv);
+    });
     
     // Play dice roll sound
     playSound('diceRoll');
@@ -1043,7 +1233,9 @@ function animateDiceRoll(finalNumber, callback) {
     // Show backdrop and container
     diceBackdrop.classList.add('active');
     diceContainer.classList.add('rolling');
-    diceElement.classList.add('rolling');
+    
+    // Add rolling class to all dice
+    diceElements.forEach(dice => dice.classList.add('rolling'));
     
     // Animate through random numbers
     let counter = 0;
@@ -1051,19 +1243,23 @@ function animateDiceRoll(finalNumber, callback) {
     const frameDelay = 50;
     
     const interval = setInterval(() => {
-        const randomNum = Math.floor(Math.random() * 6) + 1;
-        setDiceFace(randomNum);
+        diceElements.forEach(dice => {
+            const randomNum = Math.floor(Math.random() * 6) + 1;
+            setDiceFaceForElement(dice, randomNum);
+        });
         counter++;
         
         if (counter >= totalFrames) {
             clearInterval(interval);
             
-            // Show final number
-            setDiceFace(finalNumber);
+            // Show final numbers
+            diceElements.forEach((dice, index) => {
+                setDiceFaceForElement(dice, valuesArray[index]);
+            });
             
             // Remove animation classes after a delay
             setTimeout(() => {
-                diceElement.classList.remove('rolling');
+                diceElements.forEach(dice => dice.classList.remove('rolling'));
                 
                 setTimeout(() => {
                     diceContainer.classList.remove('rolling');
@@ -1086,6 +1282,7 @@ function switchScreen(screen) {
     // Stop camera animation when leaving game screen
     if (screen !== 'game') {
         stopCameraAnimation();
+        stopExplosionAnimation(); // Stop explosion animation loop
         followCameraEnabled = false;
         cameraZoom = cameraTargetZoom = 1.8; // Reset zoom
         mobileCameraBtn.classList.remove('active');
@@ -1166,6 +1363,42 @@ function updateLobby() {
     }
 }
 
+function openDiceControlModal() {
+    if (!gameState || !currentPlayer) return;
+
+    // Update the modal message with the actual threshold
+    const threshold = gameState.snakeThreshold || 3;
+    const powerMessage = document.querySelector('.power-message');
+    if (powerMessage) {
+        powerMessage.textContent = `You've been bitten by ${threshold} snakes! Control another player's next dice roll...`;
+    }
+
+    // Populate target player select
+    targetPlayerSelect.innerHTML = '<option value="">Choose a player...</option>';
+    gameState.players.forEach(player => {
+        if (player.persistentId !== currentPlayer.persistentId) {
+            const option = document.createElement('option');
+            option.value = player.persistentId;
+            option.textContent = `${player.icon} ${player.name}`;
+            targetPlayerSelect.appendChild(option);
+        }
+    });
+
+    // Populate dice value inputs based on current dice count
+    diceValueControls.innerHTML = '';
+    for (let i = 0; i < currentDiceCount; i++) {
+        const diceInput = document.createElement('div');
+        diceInput.className = 'dice-value-input';
+        diceInput.innerHTML = `
+            <label>Die ${i + 1}</label>
+            <input type="number" min="1" max="6" value="1" />
+        `;
+        diceValueControls.appendChild(diceInput);
+    }
+
+    diceControlModal.classList.add('active');
+}
+
 function updateGameScreen() {
     if (!gameState) return;
 
@@ -1176,6 +1409,18 @@ function updateGameScreen() {
             ${currentTurnPlayer.name}'s Turn
         </div>
     `;
+    
+    // Show/hide dice control power button (desktop and mobile)
+    if (currentPlayer) {
+        const myPlayerState = gameState.players.find(p => p.persistentId === currentPlayer.persistentId);
+        if (myPlayerState && myPlayerState.hasDiceControl) {
+            diceControlPowerBtn.style.display = 'flex';
+            mobilePowerBtn.style.display = 'flex';
+        } else {
+            diceControlPowerBtn.style.display = 'none';
+            mobilePowerBtn.style.display = 'none';
+        }
+    }
 
     // Update last roll display (only if not in dice animation to preserve suspense)
     if (!diceAnimationInProgress) {
@@ -1576,6 +1821,11 @@ function drawBoard() {
         }
     }
     
+    // Draw voids (destroyed tiles) - FIRST so they appear behind everything
+    if (gameState.voids && gameState.voids.length > 0) {
+        drawVoids(gameState.voids);
+    }
+    
     // Draw snakes
     if (gameState.snakes) {
         drawSnakes(gameState.snakes);
@@ -1585,6 +1835,14 @@ function drawBoard() {
     if (gameState.ladders) {
         drawLadders(gameState.ladders);
     }
+    
+    // Draw mines
+    if (gameState.mines && gameState.mines.length > 0) {
+        drawMines(gameState.mines);
+    }
+    
+    // Draw explosion animations (on top of everything but below players)
+    drawExplosions();
     
     // Draw players
     gameState.players.forEach((player, index) => {
@@ -1600,6 +1858,10 @@ function drawBoard() {
 // Continuous camera animation loop for smooth following
 let cameraAnimationId = null;
 let lastCameraUpdate = 0;
+
+// Continuous explosion animation loop
+let explosionAnimationId = null;
+let lastExplosionUpdate = 0;
 
 function startCameraAnimation() {
     if (cameraAnimationId) return; // Already running
@@ -1625,6 +1887,33 @@ function stopCameraAnimation() {
     if (cameraAnimationId) {
         cancelAnimationFrame(cameraAnimationId);
         cameraAnimationId = null;
+    }
+}
+
+function startExplosionAnimation() {
+    if (explosionAnimationId) return; // Already running
+
+    function animateExplosions(timestamp) {
+        // Always run explosion animation when there are active explosions
+        if (explosionAnimations.length > 0) {
+            // Limit explosion updates to 60fps for performance
+            if (timestamp - lastExplosionUpdate > 16) { // ~60fps
+                drawBoard();
+                lastExplosionUpdate = timestamp;
+            }
+            explosionAnimationId = requestAnimationFrame(animateExplosions);
+        } else {
+            explosionAnimationId = null; // Stop animation when no explosions
+        }
+    }
+
+    animateExplosions(0);
+}
+
+function stopExplosionAnimation() {
+    if (explosionAnimationId) {
+        cancelAnimationFrame(explosionAnimationId);
+        explosionAnimationId = null;
     }
 }
 
@@ -1902,6 +2191,289 @@ function drawLadders(ladders) {
         
         ctx.lineWidth = 1;
         ctx.lineCap = 'butt';
+    });
+}
+
+function drawMines(mines) {
+    const cellSize = canvasLogicalSize / 10;
+    
+    mines.forEach(minePosition => {
+        const pos = getPosition(minePosition);
+        
+        // Draw mine shadow
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 5;
+        
+        // Draw mine body (dark gray sphere)
+        const mineRadius = cellSize * 0.15;
+        const gradient = ctx.createRadialGradient(
+            pos.x - mineRadius * 0.3, pos.y - mineRadius * 0.3, 0,
+            pos.x, pos.y, mineRadius
+        );
+        gradient.addColorStop(0, '#4a4a4a');
+        gradient.addColorStop(1, '#1a1a1a');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, mineRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        // Draw bomb emoji on top
+        ctx.font = `${cellSize * 0.35}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#000000';
+        ctx.fillText('💣', pos.x, pos.y);
+    });
+}
+
+// Particle system for explosions
+class ExplosionParticle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 8;
+        this.vy = (Math.random() - 0.5) * 8 - 2; // Bias upward
+        this.size = Math.random() * 4 + 2;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.02 + 0.015;
+        this.color = `hsl(${Math.random() * 60 + 10}, 100%, ${Math.random() * 50 + 50}%)`; // Orange to yellow range
+        this.isSpark = Math.random() < 0.3; // 30% chance to be a spark
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.2; // Gravity
+        this.vx *= 0.98; // Air resistance
+        this.life -= this.decay;
+        this.size *= 0.98;
+    }
+
+    draw(ctx) {
+        if (this.life <= 0) return;
+
+        ctx.save();
+        ctx.globalAlpha = this.life;
+
+        if (this.isSpark) {
+            // Draw spark as a small bright dot
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 10;
+        } else {
+            ctx.fillStyle = this.color;
+        }
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+function createExplosion(position) {
+    const pos = getPosition(position);
+    const explosion = {
+        x: pos.x,
+        y: pos.y,
+        minePosition: position, // Store the tile position
+        startTime: Date.now(),
+        duration: 1500, // 1.5 seconds for full animation (shorter)
+        particles: [],
+        holeFadeIn: 0
+    };
+
+    // Create initial burst of particles
+    for (let i = 0; i < 25; i++) {
+        explosion.particles.push(new ExplosionParticle(pos.x, pos.y));
+    }
+
+    explosionAnimations.push(explosion);
+
+    // Start the explosion animation loop
+    startExplosionAnimation();
+}
+
+function drawExplosions() {
+    const cellSize = canvasLogicalSize / 10;
+    const currentTime = Date.now();
+
+    // Filter out completed explosions and draw active ones
+    explosionAnimations = explosionAnimations.filter(explosion => {
+        const elapsed = currentTime - explosion.startTime;
+        const progress = Math.min(elapsed / explosion.duration, 1);
+
+        if (progress >= 1) {
+            // Remove completed explosion
+            // Notify server that explosion animation has completed so void can be added to game state
+            if (currentRoom && explosion.minePosition) {
+                socket.emit('explosion-complete', {
+                    roomId: currentRoom,
+                    position: explosion.minePosition
+                });
+            }
+            return false;
+        }
+
+        // Update hole fade in (starts after explosion begins)
+        explosion.holeFadeIn = Math.max(0, Math.min((progress - 0.3) / 0.4, 1));
+
+        ctx.save();
+
+        // Explosion animation phases
+        const phase1 = 0.15; // Initial flash (0-15%)
+        const phase2 = 0.5; // Fire expansion (15-50%)
+        const phase3 = 1.0; // Smoke and hole reveal (50-100%)
+
+        // Update and draw particles
+        explosion.particles = explosion.particles.filter(particle => {
+            particle.update();
+            if (particle.life > 0) {
+                particle.draw(ctx);
+                return true;
+            }
+            return false;
+        });
+
+        // Add new particles during expansion phase
+        if (progress < phase2) {
+            const expansionProgress = progress / phase2;
+            const newParticles = Math.floor((1 - expansionProgress) * 3); // Fewer particles over time
+            for (let i = 0; i < newParticles; i++) {
+                explosion.particles.push(new ExplosionParticle(explosion.x, explosion.y));
+            }
+        }
+
+        if (progress < phase1) {
+            // Phase 1: Intense white flash
+            const flashProgress = progress / phase1;
+            const flashRadius = cellSize * 0.5 * (1 + flashProgress * 0.5);
+            const flashAlpha = 1 - flashProgress * 0.3;
+
+            // Bright white/yellow flash
+            const flashGradient = ctx.createRadialGradient(
+                explosion.x, explosion.y, 0,
+                explosion.x, explosion.y, flashRadius
+            );
+            flashGradient.addColorStop(0, `rgba(255, 255, 255, ${flashAlpha})`);
+            flashGradient.addColorStop(0.3, `rgba(255, 255, 200, ${flashAlpha * 0.9})`);
+            flashGradient.addColorStop(0.6, `rgba(255, 200, 100, ${flashAlpha * 0.7})`);
+            flashGradient.addColorStop(1, `rgba(255, 100, 0, 0)`);
+
+            ctx.fillStyle = flashGradient;
+            ctx.beginPath();
+            ctx.arc(explosion.x, explosion.y, flashRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+        } else if (progress < phase2) {
+            // Phase 2: Expanding fire ring with more particles
+            const ringProgress = (progress - phase1) / (phase2 - phase1);
+            const ringRadius = cellSize * 0.6 * (1 + ringProgress * 1.5);
+            const ringAlpha = (1 - ringProgress) * 0.8;
+
+            // Orange/red fire ring
+            const ringGradient = ctx.createRadialGradient(
+                explosion.x, explosion.y, ringRadius * 0.3,
+                explosion.x, explosion.y, ringRadius
+            );
+            ringGradient.addColorStop(0, `rgba(255, 255, 255, ${ringAlpha * 0.3})`);
+            ringGradient.addColorStop(0.4, `rgba(255, 200, 0, ${ringAlpha * 0.8})`);
+            ringGradient.addColorStop(0.7, `rgba(255, 69, 0, ${ringAlpha * 0.6})`);
+            ringGradient.addColorStop(1, `rgba(139, 0, 0, 0)`);
+
+            ctx.fillStyle = ringGradient;
+            ctx.beginPath();
+            ctx.arc(explosion.x, explosion.y, ringRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+        } else {
+            // Phase 3: Smoke fade out and hole reveal
+            const smokeProgress = (progress - phase2) / (phase3 - phase2);
+            const smokeRadius = cellSize * 0.8;
+            const smokeAlpha = (1 - smokeProgress) * 0.6;
+
+            // Dark smoke with hole fade in
+            const smokeGradient = ctx.createRadialGradient(
+                explosion.x, explosion.y, cellSize * 0.2 * (1 - explosion.holeFadeIn * 0.5),
+                explosion.x, explosion.y, smokeRadius
+            );
+            smokeGradient.addColorStop(0, `rgba(20, 20, 20, ${smokeAlpha * (1 - explosion.holeFadeIn)})`);
+            smokeGradient.addColorStop(0.5, `rgba(40, 40, 40, ${smokeAlpha * (1 - explosion.holeFadeIn * 0.5)})`);
+            smokeGradient.addColorStop(1, `rgba(60, 60, 60, 0)`);
+
+            ctx.fillStyle = smokeGradient;
+            ctx.beginPath();
+            ctx.arc(explosion.x, explosion.y, smokeRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw emerging hole/crater
+            if (explosion.holeFadeIn > 0) {
+                const holeRadius = cellSize * 0.35 * explosion.holeFadeIn;
+                const holeGradient = ctx.createRadialGradient(
+                    explosion.x, explosion.y, 0,
+                    explosion.x, explosion.y, holeRadius
+                );
+                holeGradient.addColorStop(0, `rgba(0, 0, 0, ${explosion.holeFadeIn})`);
+                holeGradient.addColorStop(0.5, `rgba(10, 10, 10, ${explosion.holeFadeIn * 0.8})`);
+                holeGradient.addColorStop(1, `rgba(30, 30, 30, ${explosion.holeFadeIn * 0.5})`);
+
+                ctx.fillStyle = holeGradient;
+                ctx.beginPath();
+                ctx.arc(explosion.x, explosion.y, holeRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        ctx.restore();
+        return true; // Keep explosion in array
+    });
+}
+
+function drawVoids(voids) {
+    const cellSize = canvasLogicalSize / 10;
+    const boardSize = 10;
+    
+    // Draw all voids, including pending ones (so black tile shows immediately under explosion)
+    // Combine server voids and temporary client voids for immediate visual feedback
+    const tempVoids = gameState.tempVoids || [];
+    const allVoids = [...voids, ...tempVoids];
+
+    allVoids.forEach(voidPosition => {
+        // Calculate cell position
+        const rowFromBottom = Math.floor((voidPosition - 1) / boardSize);
+        const row = boardSize - 1 - rowFromBottom;
+        
+        let col;
+        if (rowFromBottom % 2 === 0) {
+            col = (voidPosition - 1) % boardSize;
+        } else {
+            col = boardSize - 1 - ((voidPosition - 1) % boardSize);
+        }
+        
+        const x = col * cellSize;
+        const y = row * cellSize;
+        
+        // Draw void as simple black square
+        ctx.save();
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(x, y, cellSize, cellSize);
+
+        // Add subtle border to show it's destroyed
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, cellSize, cellSize);
+
+        ctx.restore();
     });
 }
 

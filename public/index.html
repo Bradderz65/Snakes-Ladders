@@ -114,6 +114,62 @@
                         <span class="checkmark"></span>
                         <span class="checkbox-text">Discoverable</span>
                     </label>
+                    
+                    <div class="options-row">
+                        <div class="dice-count-selector">
+                            <label class="dice-count-label">🎲 Dice:</label>
+                            <div class="dice-count-options">
+                                <label class="dice-count-option">
+                                    <input type="radio" name="dice-count" value="1" checked>
+                                    <span class="dice-count-button">1 Die</span>
+                                </label>
+                                <label class="dice-count-option">
+                                    <input type="radio" name="dice-count" value="2">
+                                    <span class="dice-count-button">2 Dice</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="snake-threshold-selector">
+                            <label class="snake-threshold-label">🐍⚡ Power:</label>
+                            <div class="snake-threshold-options">
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="2">
+                                    <span class="snake-threshold-button">2</span>
+                                </label>
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="3" checked>
+                                    <span class="snake-threshold-button">3</span>
+                                </label>
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="4">
+                                    <span class="snake-threshold-button">4</span>
+                                </label>
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="5">
+                                    <span class="snake-threshold-button">5</span>
+                                </label>
+                            </div>
+                            <div class="snake-threshold-hint">Snakes needed for revenge power</div>
+                        </div>
+                    </div>
+
+                    <div class="mines-section">
+                        <label class="checkbox-inline mines-toggle">
+                            <input type="checkbox" id="enable-mines">
+                            <span class="checkmark"></span>
+                            <span class="checkbox-text">💣 Enable Mines</span>
+                        </label>
+                        
+                        <div id="mines-config" class="mines-config" style="display: none;">
+                            <label class="mines-count-label">Number of Mines:</label>
+                            <div class="mines-count-slider">
+                                <input type="range" id="mines-count" min="3" max="15" value="5" step="1">
+                                <span id="mines-count-value" class="mines-count-value">5</span>
+                            </div>
+                            <div class="mines-hint">💣 Land on a mine → tile becomes a void ⚫ → fall to tile 1!</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Local Games -->
@@ -210,6 +266,10 @@
                             <span class="dice-icon">🎲</span>
                             Roll Dice
                         </button>
+                        <button id="dice-control-power-btn" class="btn btn-power" style="display: none;">
+                            <span class="power-icon-btn">🐍⚡</span>
+                            Revenge Power
+                        </button>
                         <button id="reset-game-btn" class="btn btn-reset">Reset Game</button>
                         <button id="leave-game-btn" class="btn btn-disconnect">Leave Game</button>
                     </div>
@@ -218,6 +278,9 @@
                 <!-- Mobile Floating Buttons -->
                 <button id="mobile-camera-btn" class="mobile-camera-btn">
                     <span class="camera-icon">📷</span>
+                </button>
+                <button id="mobile-power-btn" class="mobile-power-btn" style="display: none;">
+                    <span class="power-icon">🐍⚡</span>
                 </button>
                 <button id="mobile-roll-btn" class="mobile-roll-btn">
                     <span class="dice-icon">🎲</span>
@@ -308,6 +371,34 @@
                 <div class="conflict-options">
                     <button id="keep-customization-btn" class="btn btn-secondary">Keep My Choice</button>
                     <button id="change-customization-btn" class="btn btn-primary">Choose Different</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dice Control Modal -->
+        <div id="dice-control-modal" class="modal">
+            <div class="modal-content dice-control-content">
+                <div class="power-icon">🐍⚡</div>
+                <h2 class="power-title">Revenge Power Activated!</h2>
+                <p class="power-message">You've been bitten by 3 snakes! Control another player's next dice roll...</p>
+                
+                <div class="control-section">
+                    <label class="control-label">Select Target Player:</label>
+                    <select id="target-player-select" class="target-player-select">
+                        <option value="">Choose a player...</option>
+                    </select>
+                </div>
+
+                <div class="control-section">
+                    <label class="control-label">Set Dice Values:</label>
+                    <div id="dice-value-controls" class="dice-value-controls">
+                        <!-- Dynamically populated based on dice count -->
+                    </div>
+                </div>
+
+                <div class="control-actions">
+                    <button id="set-control-btn" class="btn btn-primary">Set Controlled Roll</button>
+                    <button id="cancel-control-btn" class="btn btn-secondary">Cancel</button>
                 </div>
             </div>
         </div>

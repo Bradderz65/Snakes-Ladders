@@ -694,6 +694,31 @@ input[type="text"]::placeholder {
     box-shadow: 0 8px 25px rgba(239, 68, 68, 0.5);
 }
 
+.btn-power {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    font-size: 1.1rem;
+    padding: 1.25rem;
+    animation: powerPulse 2s ease-in-out infinite;
+}
+
+.btn-power:hover {
+    box-shadow: 0 8px 25px rgba(16, 185, 129, 0.6);
+}
+
+@keyframes powerPulse {
+    0%, 100% {
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+    }
+    50% {
+        box-shadow: 0 8px 30px rgba(16, 185, 129, 0.8);
+    }
+}
+
+.power-icon-btn {
+    font-size: 1.5rem;
+}
+
 .board-container {
     flex: 1;
     display: flex;
@@ -1154,11 +1179,15 @@ input[type="text"]::placeholder {
     transform: translate(-50%, -50%);
     z-index: 2000;
     display: none;
+    gap: 20px;
 }
 
 .dice-container.rolling {
-    display: block;
+    display: flex;
     animation: diceEntrance 0.3s ease-out;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
 }
 
 .dice {
@@ -1290,6 +1319,38 @@ input[type="text"]::placeholder {
     }
 }
 
+
+/* Mobile Floating Power Button */
+.mobile-power-btn {
+    display: none;
+    position: fixed;
+    bottom: 1.5rem;
+    right: 5.5rem;
+    z-index: 100;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.5);
+    transition: all 0.3s ease;
+    animation: powerPulse 2s ease-in-out infinite;
+}
+
+.mobile-power-btn:not(:disabled):hover {
+    transform: scale(1.1);
+    box-shadow: 0 12px 28px rgba(16, 185, 129, 0.7);
+}
+
+.mobile-power-btn:not(:disabled):active {
+    transform: scale(0.95);
+}
+
+.mobile-power-btn .power-icon {
+    font-size: 1.6rem;
+    color: white;
+}
 
 /* Mobile Floating Roll Button */
 .mobile-roll-btn {
@@ -1485,6 +1546,28 @@ input[type="text"]::placeholder {
         font-size: 0.75rem;
     }
 
+    .dice-count-label {
+        font-size: 0.75rem;
+    }
+
+    .dice-count-button {
+        padding: 0.35rem 0.6rem;
+        font-size: 0.7rem;
+    }
+
+    .snake-threshold-label {
+        font-size: 0.75rem;
+    }
+
+    .snake-threshold-button {
+        padding: 0.35rem 0.4rem;
+        font-size: 0.7rem;
+    }
+
+    .snake-threshold-hint {
+        font-size: 0.6rem;
+    }
+
     /* Local games */
     .local-games {
         padding: 0.65rem;
@@ -1549,6 +1632,12 @@ input[type="text"]::placeholder {
 
     .mobile-camera-btn {
         display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .mobile-power-btn {
+        display: none;
         align-items: center;
         justify-content: center;
     }
@@ -1704,6 +1793,34 @@ input[type="text"]::placeholder {
 
     .checkbox-text {
         font-size: 0.7rem;
+    }
+
+    .dice-count-label {
+        font-size: 0.7rem;
+    }
+
+    .dice-count-button {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.65rem;
+    }
+
+    .snake-threshold-label {
+        font-size: 0.7rem;
+    }
+
+    .snake-threshold-button {
+        padding: 0.3rem 0.4rem;
+        font-size: 0.65rem;
+        min-width: 28px;
+    }
+
+    .snake-threshold-hint {
+        font-size: 0.55rem;
+    }
+
+    .options-row {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
     }
 
     .games-title {
@@ -1914,6 +2031,108 @@ input[type="text"]::placeholder {
     justify-content: center;
 }
 
+/* Dice Control Modal */
+.dice-control-content {
+    max-width: 500px;
+}
+
+.power-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    animation: powerIconFloat 3s ease-in-out infinite;
+}
+
+@keyframes powerIconFloat {
+    0%, 100% {
+        transform: translateY(0) rotate(-5deg);
+    }
+    50% {
+        transform: translateY(-15px) rotate(5deg);
+    }
+}
+
+.power-title {
+    font-size: 1.8rem;
+    color: var(--success-color);
+    margin-bottom: 0.5rem;
+}
+
+.power-message {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    line-height: 1.5;
+}
+
+.control-section {
+    margin-bottom: 1.5rem;
+}
+
+.control-label {
+    display: block;
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.target-player-select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--background);
+    color: var(--text-primary);
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.target-player-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.dice-value-controls {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.dice-value-input {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dice-value-input label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.dice-value-input input {
+    width: 60px;
+    height: 60px;
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    border: 3px solid var(--primary-color);
+    border-radius: 8px;
+    background: var(--background);
+    color: var(--text-primary);
+}
+
+.dice-value-input input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 20px rgba(240, 147, 251, 0.3);
+}
+
+.control-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
 /* Options Bar */
 .options-bar {
     padding: 0.6rem;
@@ -1921,6 +2140,9 @@ input[type="text"]::placeholder {
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.05);
     margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
 .checkbox-inline {
@@ -1989,6 +2211,220 @@ input[type="text"]::placeholder {
 .checkbox-inline:hover .checkbox-text,
 .checkbox-container:hover .checkbox-label {
     color: var(--text-primary);
+}
+
+/* Options Row Layout */
+.options-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+/* Dice Count Selector */
+.dice-count-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.dice-count-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.dice-count-options {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.dice-count-option {
+    flex: 1;
+    cursor: pointer;
+    user-select: none;
+}
+
+.dice-count-option input[type="radio"] {
+    display: none;
+}
+
+.dice-count-button {
+    display: block;
+    padding: 0.4rem 0.75rem;
+    background: var(--background);
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.dice-count-option:hover .dice-count-button {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.dice-count-option input[type="radio"]:checked + .dice-count-button {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    border-color: var(--primary-color);
+    color: white;
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.4);
+    transform: scale(1.05);
+}
+
+/* Snake Threshold Selector */
+.snake-threshold-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.snake-threshold-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.snake-threshold-options {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.snake-threshold-option {
+    flex: 1;
+    cursor: pointer;
+    user-select: none;
+}
+
+.snake-threshold-option input[type="radio"] {
+    display: none;
+}
+
+.snake-threshold-button {
+    display: block;
+    padding: 0.4rem 0.5rem;
+    background: var(--background);
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+    transition: all 0.3s ease;
+    min-width: 32px;
+}
+
+.snake-threshold-option:hover .snake-threshold-button {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--success-color);
+    color: var(--text-primary);
+}
+
+.snake-threshold-option input[type="radio"]:checked + .snake-threshold-button {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border-color: var(--success-color);
+    color: white;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+    transform: scale(1.05);
+}
+
+.snake-threshold-hint {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    text-align: center;
+    margin-top: 0.25rem;
+}
+
+/* Mines Configuration */
+.mines-section {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mines-toggle {
+    margin-bottom: 0.5rem;
+}
+
+.mines-config {
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 0.5rem;
+}
+
+.mines-count-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.mines-count-slider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.mines-count-slider input[type="range"] {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-color);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.mines-count-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+}
+
+.mines-count-slider input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+}
+
+.mines-count-value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    padding: 0.25rem 0.5rem;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    font-weight: bold;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.mines-hint {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    text-align: center;
+    line-height: 1.4;
 }
 
 /* Local Games */

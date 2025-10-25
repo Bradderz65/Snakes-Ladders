@@ -46,15 +46,14 @@ const LADDERS = {
     28: 84,
     36: 44,
     51: 67,
-    71: 91,
-    80: 100
+    71: 91
 };
 
 const BOARD_SIZE = 100;
 const WINNING_POSITION = 100;
 
 class Game {
-    constructor(roomId, discoverable = false) {
+    constructor(roomId, discoverable = false, diceCount = 1, snakeThreshold = 3, minesEnabled = false, minesCount = 5) {
         this.roomId = roomId;
         this.players = [];
         this.currentTurn = 0;
@@ -64,6 +63,40 @@ class Game {
         this.discoverable = discoverable;
         this.createdAt = Date.now();
         this.hostname = null;
+        this.diceCount = diceCount; // Number of dice to roll (1 or 2)
+        this.snakeThreshold = snakeThreshold; // Number of snakes needed for revenge power (2-5)
+        this.minesEnabled = minesEnabled; // Whether mines are enabled
+        this.minesCount = minesCount; // Number of mines to spawn (3-15)
+        this.mines = []; // Array of tile positions with mines
+        this.voids = []; // Array of tile positions that became voids
+        
+        // Generate mines if enabled
+        if (this.minesEnabled) {
+            this.generateMines();
+        }
+    }
+    
+    generateMines() {
+        // Clear existing mines
+        this.mines = [];
+
+        // Get all occupied tiles (snakes, ladders, start, end, and existing voids)
+        const occupiedTiles = new Set([1, 100]); // Start and end tiles
+        Object.keys(SNAKES).forEach(tile => occupiedTiles.add(parseInt(tile)));
+        Object.keys(LADDERS).forEach(tile => occupiedTiles.add(parseInt(tile)));
+        // Add existing voids to occupied tiles to prevent mines on destroyed tiles
+        this.voids.forEach(voidTile => occupiedTiles.add(voidTile));
+
+        // Generate random mine positions
+        while (this.mines.length < this.minesCount) {
+            const randomTile = Math.floor(Math.random() * 99) + 2; // 2-99 (avoid 1 and 100)
+
+            if (!occupiedTiles.has(randomTile) && !this.mines.includes(randomTile)) {
+                this.mines.push(randomTile);
+            }
+        }
+
+        console.log(`Generated ${this.mines.length} mines at positions:`, this.mines);
     }
 
     addPlayer(playerId, playerName, persistentId = null, playerColor = null, playerIcon = null) {
@@ -93,7 +126,11 @@ class Game {
             position: 0,
             color: color,
             icon: icon,
-            ready: false
+            ready: false,
+            snakeHits: 0, // Track how many times player hit snakes
+            hasDiceControl: false, // Whether player earned dice control power
+            controlledDiceRoll: null, // Store controlled dice values {targetPlayerId, diceValues}
+            hasUsedPower: false // Track if player has already used their revenge power this game
         };
 
         this.players.push(player);
@@ -147,8 +184,23 @@ class Game {
         return false;
     }
 
-    rollDice() {
-        return Math.floor(Math.random() * 6) + 1;
+    rollDice(controlledValues = null) {
+        // If there are controlled values, use them instead of random
+        if (controlledValues && Array.isArray(controlledValues)) {
+            return controlledValues;
+        }
+        
+        // Roll the number of dice specified for this game
+        const rolls = [];
+        for (let i = 0; i < this.diceCount; i++) {
+            rolls.push(Math.floor(Math.random() * 6) + 1);
+        }
+        return rolls;
+    }
+    
+    // Calculate total from dice rolls
+    getDiceTotal(rolls) {
+        return rolls.reduce((sum, roll) => sum + roll, 0);
     }
 
     movePlayer(playerId) {
@@ -161,28 +213,51 @@ class Game {
             return { success: false, message: 'Not your turn' };
         }
 
-        const diceRoll = this.rollDice();
-        this.lastRoll = diceRoll;
+        // Check if any player has set a controlled dice roll for this player
+        let controlledValues = null;
+        let controllerPlayer = null;
+        for (const p of this.players) {
+            if (p.controlledDiceRoll && p.controlledDiceRoll.targetPlayerId === player.persistentId) {
+                controlledValues = p.controlledDiceRoll.diceValues;
+                controllerPlayer = p;
+                break;
+            }
+        }
+
+        const diceRolls = this.rollDice(controlledValues);
+        const diceTotal = this.getDiceTotal(diceRolls);
+        this.lastRoll = diceTotal;
+        
+        // Clear the controlled dice roll after use
+        const wasControlled = controlledValues !== null;
+        if (wasControlled && controllerPlayer) {
+            controllerPlayer.controlledDiceRoll = null;
+        }
         
         const oldPosition = player.position;
-        let newPosition = player.position + diceRoll;
+        let newPosition = player.position + diceTotal;
         
         // Can't move if it would go past 100
         if (newPosition > WINNING_POSITION) {
-            const rolledSix = diceRoll === 6;
-            if (!rolledSix) {
+            // For 2 dice, check if it's a double (both dice same value) for another turn
+            // For 1 die, check if it's 6
+            const rolledDouble = this.diceCount === 2 && diceRolls[0] === diceRolls[1];
+            const anotherTurn = (this.diceCount === 1 && diceTotal === 6) || rolledDouble;
+            
+            if (!anotherTurn) {
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
             }
             return {
                 success: true,
-                diceRoll,
+                diceRoll: diceTotal,
+                diceRolls: diceRolls,
                 oldPosition: player.position,
                 newPosition: player.position,
                 player: player,
                 snake: null,
                 ladder: null,
                 winner: null,
-                anotherTurn: rolledSix
+                anotherTurn: anotherTurn
             };
         }
 
@@ -190,19 +265,83 @@ class Game {
         
         let snake = null;
         let ladder = null;
+        let powerGranted = false;
+        let mine = null;
+        let voidFall = null;
 
-        // Check for snake
-        if (SNAKES[newPosition]) {
+        // Check for void first (player falls back 3x the dice roll)
+        if (this.voids.includes(newPosition)) {
+            const fallbackPosition = Math.max(newPosition - (diceTotal * 3), 1);
+            voidFall = { from: newPosition, to: fallbackPosition };
+            player.position = fallbackPosition;
+            newPosition = fallbackPosition;
+        }
+        // Check for mine (explodes and creates void)
+        else if (this.mines.includes(newPosition)) {
+            mine = { position: newPosition };
+
+            // Note: Don't remove mine from array yet - wait for client animation to complete
+            // This prevents mine from disappearing before player reaches it
+
+            // Player falls to tile 1
+            player.position = 1;
+            newPosition = 1;
+        }
+        // Check for snake (only if didn't hit mine/void)
+        else if (SNAKES[newPosition]) {
             snake = { from: newPosition, to: SNAKES[newPosition] };
             player.position = SNAKES[newPosition];
             newPosition = player.position;
+            
+            // Increment snake hit counter
+            player.snakeHits++;
+            
+            // Grant dice control power if player has hit the threshold number of snakes 
+            // and doesn't already have it, and hasn't used it yet this game
+            if (player.snakeHits >= this.snakeThreshold && !player.hasDiceControl && !player.hasUsedPower) {
+                player.hasDiceControl = true;
+                powerGranted = true;
+            }
         }
-
-        // Check for ladder
-        if (LADDERS[newPosition]) {
+        // Check for ladder (only if didn't hit mine/void/snake)
+        else if (LADDERS[newPosition]) {
             ladder = { from: newPosition, to: LADDERS[newPosition] };
             player.position = LADDERS[newPosition];
             newPosition = player.position;
+
+            // Check for mine at ladder destination - IMPORTANT: Check after moving up ladder
+            if (this.mines.includes(newPosition)) {
+                mine = { position: newPosition };
+
+                // Note: Don't remove mine from array yet - wait for client animation to complete
+                // This prevents mine from disappearing before player reaches it
+
+                // Player falls to tile 1 (even from ladder)
+                player.position = 1;
+                newPosition = 1;
+
+                // Clear ladder since mine takes precedence
+                ladder = null;
+            }
+            // Check for snake at ladder destination (less common but possible)
+            else if (SNAKES[newPosition]) {
+                snake = { from: newPosition, to: SNAKES[newPosition] };
+                player.position = SNAKES[newPosition];
+                newPosition = player.position;
+
+                // Increment snake hit counter
+                player.snakeHits++;
+
+                // Grant dice control power if player has hit the threshold number of snakes
+                // and doesn't already have it, and hasn't used it yet this game
+                if (player.snakeHits >= this.snakeThreshold && !player.hasDiceControl && !player.hasUsedPower) {
+                    player.hasDiceControl = true;
+                    powerGranted = true;
+                }
+
+                // Clear ladder since snake takes precedence
+                ladder = null;
+            }
         }
 
         // Check for winner
@@ -210,22 +349,32 @@ class Game {
             this.winner = player;
         }
 
-        // Move to next turn (unless player rolled a 6)
-        const rolledSix = diceRoll === 6;
-        if (!rolledSix) {
+        // Move to next turn (unless player rolled a double with 2 dice or 6 with 1 die)
+        // For 2 dice, check if it's a double (both dice same value)
+        // For 1 die, check if it's 6
+        const rolledDouble = this.diceCount === 2 && diceRolls[0] === diceRolls[1];
+        const anotherTurn = (this.diceCount === 1 && diceTotal === 6) || rolledDouble;
+        
+        if (!anotherTurn) {
             this.currentTurn = (this.currentTurn + 1) % this.players.length;
         }
 
         return {
             success: true,
-            diceRoll,
+            diceRoll: diceTotal,
+            diceRolls: diceRolls,
             oldPosition: oldPosition,
             newPosition: player.position,
             player: player,
             snake,
             ladder,
+            mine,
+            voidFall,
             winner: this.winner,
-            anotherTurn: rolledSix
+            anotherTurn: anotherTurn,
+            wasControlled: wasControlled,
+            controllerPlayerId: wasControlled && controllerPlayer ? controllerPlayer.persistentId : null,
+            powerGranted: powerGranted
         };
     }
 
@@ -239,7 +388,12 @@ class Game {
             snakes: SNAKES,
             ladders: LADDERS,
             discoverable: this.discoverable,
-            hostname: this.hostname
+            hostname: this.hostname,
+            diceCount: this.diceCount,
+            snakeThreshold: this.snakeThreshold,
+            minesEnabled: this.minesEnabled,
+            mines: this.mines,
+            voids: this.voids
         };
     }
 
@@ -381,9 +535,15 @@ function broadcastDiscovery() {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('create-room', ({ playerName, discoverable = false, hostname = null, playerColor = null, playerIcon = null }) => {
+    socket.on('create-room', ({ playerName, discoverable = false, hostname = null, playerColor = null, playerIcon = null, diceCount = 1, snakeThreshold = 3, minesEnabled = false, minesCount = 5 }) => {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const game = new Game(roomId, discoverable);
+        // Validate diceCount (must be 1 or 2)
+        const validDiceCount = (diceCount === 1 || diceCount === 2) ? diceCount : 1;
+        // Validate snakeThreshold (must be 2-5)
+        const validSnakeThreshold = (snakeThreshold >= 2 && snakeThreshold <= 5) ? snakeThreshold : 3;
+        // Validate minesCount (must be 3-15)
+        const validMinesCount = (minesCount >= 3 && minesCount <= 15) ? minesCount : 5;
+        const game = new Game(roomId, discoverable, validDiceCount, validSnakeThreshold, minesEnabled, validMinesCount);
         if (hostname) {
             game.hostname = hostname;
         }
@@ -492,13 +652,74 @@ io.on('connection', (socket) => {
         game.players.forEach(player => {
             player.position = 0;
             player.ready = false;
+            player.snakeHits = 0;
+            player.hasDiceControl = false;
+            player.controlledDiceRoll = null;
+            player.hasUsedPower = false;
         });
         game.currentTurn = 0;
         game.started = false;
         game.winner = null;
         game.lastRoll = null;
+        
+        // Reset mines and voids
+        game.voids = [];
+        if (game.minesEnabled) {
+            game.generateMines();
+        }
 
         io.to(roomId).emit('game-reset');
+        io.to(roomId).emit('game-state', game.getState());
+    });
+
+    socket.on('set-controlled-dice', ({ roomId, targetPlayerId, diceValues }) => {
+        const game = games.get(roomId);
+        if (!game || !game.started) return;
+
+        const controllerPlayer = game.players.find(p => p.id === socket.id);
+        if (!controllerPlayer || !controllerPlayer.hasDiceControl) {
+            socket.emit('error', { message: 'You do not have dice control power' });
+            return;
+        }
+
+        // Validate dice values
+        if (!Array.isArray(diceValues) || diceValues.length !== game.diceCount) {
+            socket.emit('error', { message: 'Invalid dice values' });
+            return;
+        }
+
+        // Validate each dice value is between 1-6
+        if (!diceValues.every(val => val >= 1 && val <= 6)) {
+            socket.emit('error', { message: 'Dice values must be between 1 and 6' });
+            return;
+        }
+
+        // Validate target player exists
+        const targetPlayer = game.players.find(p => p.persistentId === targetPlayerId);
+        if (!targetPlayer) {
+            socket.emit('error', { message: 'Target player not found' });
+            return;
+        }
+
+        // Set the controlled dice roll
+        controllerPlayer.controlledDiceRoll = {
+            targetPlayerId: targetPlayerId,
+            diceValues: diceValues
+        };
+
+        // Remove the power after setting (one-time use)
+        controllerPlayer.hasDiceControl = false;
+        
+        // Mark that the player has used their power this game (prevents getting it again)
+        controllerPlayer.hasUsedPower = true;
+
+        // Notify the controller (secretly)
+        socket.emit('dice-control-set', {
+            targetPlayerName: targetPlayer.name,
+            diceValues: diceValues
+        });
+
+        // Update game state for everyone
         io.to(roomId).emit('game-state', game.getState());
     });
 
@@ -562,6 +783,25 @@ io.on('connection', (socket) => {
                 setTimeout(() => clientSocket.close(), 5000);
             });
         });
+    });
+
+    socket.on('explosion-complete', ({ roomId, position }) => {
+        const game = games.get(roomId);
+        if (!game) return;
+
+        // Remove the mine from the mines array (now that animation is complete)
+        const mineIndex = game.mines.indexOf(position);
+        if (mineIndex > -1) {
+            game.mines.splice(mineIndex, 1);
+        }
+
+        // Add the position to voids now that client animation is complete
+        if (!game.voids.includes(position)) {
+            game.voids.push(position);
+        }
+
+        // Update all clients with new void state
+        io.to(roomId).emit('game-state', game.getState());
     });
 
     socket.on('disconnect', () => {
