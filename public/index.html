@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snakes & Ladders - Multiplayer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Welcome Screen -->
+        <div id="welcome-screen" class="screen active">
+            <!-- Initial Choice Screen -->
+            <div id="choice-screen" class="choice-screen">
+                <div class="choice-card">
+                    <div class="compact-header">
+                        <h1 class="title">🎲 Snakes & Ladders</h1>
+                        <p class="subtitle">Multiplayer Game</p>
+                    </div>
+                    <div class="choice-prompt">
+                        <h2 class="choice-title">What would you like to do?</h2>
+                        <div class="choice-buttons">
+                            <button id="choice-create-btn" class="choice-btn create">
+                                <span class="choice-icon">🎮</span>
+                                <span class="choice-text">Create Game</span>
+                                <span class="choice-desc">Set up a new game with custom rules</span>
+                            </button>
+                            <button id="choice-join-btn" class="choice-btn join">
+                                <span class="choice-icon">🚪</span>
+                                <span class="choice-text">Join Game</span>
+                                <span class="choice-desc">Join an existing game</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Setup Screen (hidden initially) -->
+            <div id="setup-screen" class="welcome-card" style="display: none;">
+                <!-- Back Button -->
+                <button id="back-to-choice-btn" class="back-btn">← Back</button>
+                
+                <!-- Compact Header -->
+                <div class="compact-header">
+                    <h1 class="title">🎲 Snakes & Ladders</h1>
+                    <p class="subtitle" id="setup-subtitle">Multiplayer Game</p>
+                </div>
+
+                <!-- Player Setup - Compact Form -->
+                <div class="setup-container">
+                    <!-- Left Column: Info & Customization -->
+                    <div class="setup-left">
+                        <!-- Step 1: Name Input (always visible in join mode) -->
+                        <div class="compact-section" id="step-name">
+                            <label class="compact-label">👤 Your Name</label>
+                            <input type="text" id="player-name" placeholder="Enter name" maxlength="15" autocomplete="off">
+                        </div>
+
+                        <!-- Step 2: Color Selection (hidden initially in join mode) -->
+                        <div class="compact-section join-step" id="step-color" style="display: none;">
+                            <div class="section-header-toggle" data-section="color">
+                                <label class="compact-label">🎨 Color</label>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div class="color-selection collapsible-content collapsed">
+                            <div class="color-option selected" data-color="#FF6B6B" style="background-color: #FF6B6B"></div>
+                            <div class="color-option" data-color="#4ECDC4" style="background-color: #4ECDC4"></div>
+                            <div class="color-option" data-color="#45B7D1" style="background-color: #45B7D1"></div>
+                            <div class="color-option" data-color="#FFA07A" style="background-color: #FFA07A"></div>
+                            <div class="color-option" data-color="#98D8C8" style="background-color: #98D8C8"></div>
+                            <div class="color-option" data-color="#F7DC6F" style="background-color: #F7DC6F"></div>
+                            <div class="color-option" data-color="#BB8FCE" style="background-color: #BB8FCE"></div>
+                            <div class="color-option" data-color="#85C1E2" style="background-color: #85C1E2"></div>
+                            <div class="color-option" data-color="#F8B739" style="background-color: #F8B739"></div>
+                            <div class="color-option" data-color="#52BE80" style="background-color: #52BE80"></div>
+                            <div class="color-option" data-color="#EC7063" style="background-color: #EC7063"></div>
+                            <div class="color-option" data-color="#AF7AC5" style="background-color: #AF7AC5"></div>
+                        </div>
+                    </div>
+
+                        <!-- Step 3: Icon Selection (hidden initially in join mode) -->
+                        <div class="compact-section join-step" id="step-icon" style="display: none;">
+                            <div class="section-header-toggle" data-section="icon">
+                                <label class="compact-label">✨ Icon</label>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div class="icon-selection collapsible-content collapsed">
+                            <div class="icon-option selected" data-icon="🎮">🎮</div>
+                            <div class="icon-option" data-icon="🎯">🎯</div>
+                            <div class="icon-option" data-icon="🎲">🎲</div>
+                            <div class="icon-option" data-icon="🎪">🎪</div>
+                            <div class="icon-option" data-icon="🎨">🎨</div>
+                            <div class="icon-option" data-icon="🎭">🎭</div>
+                            <div class="icon-option" data-icon="🎪">🎪</div>
+                            <div class="icon-option" data-icon="🎸">🎸</div>
+                            <div class="icon-option" data-icon="🎺">🎺</div>
+                            <div class="icon-option" data-icon="🏆">🏆</div>
+                            <div class="icon-option" data-icon="⭐">⭐</div>
+                            <div class="icon-option" data-icon="🌟">🌟</div>
+                            <div class="icon-option" data-icon="💫">💫</div>
+                            <div class="icon-option" data-icon="🔥">🔥</div>
+                            <div class="icon-option" data-icon="⚡">⚡</div>
+                            <div class="icon-option" data-icon="🌈">🌈</div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                    <!-- Right Column: Preview & Actions -->
+                    <div class="setup-right">
+                        <!-- Player Preview -->
+                        <div class="compact-preview">
+                            <div class="preview-player" id="preview-player">
+                                <span class="preview-icon" id="preview-icon">🎮</span>
+                            </div>
+                            <div class="preview-name" id="preview-name">Player</div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="quick-actions">
+
+                            <button id="create-room-btn" class="action-btn primary">
+                                <span class="btn-icon">🎮</span>
+                                <span>Create Game</span>
+                            </button>
+                            
+                            <!-- Join Mode: Confirm Button (hidden initially) -->
+                            <button id="join-confirm-btn" class="action-btn primary join-step" style="display: none;">
+                                <span class="btn-icon">✓</span>
+                                <span>Join Using Room Code</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Join Connection Options (Hidden until user confirms customization) -->
+                <div id="join-connection-section" style="display: none;">
+                    <div class="join-section-header">
+                        <h3 class="join-section-title">Choose How to Join</h3>
+                    </div>
+                    
+                    <!-- Join Room Code -->
+                    <div class="join-code-wrapper">
+                        <label class="join-option-label">Enter Room Code</label>
+                        <div class="join-section">
+                            <input type="text" id="room-code" placeholder="Enter 6-digit code" maxlength="6" autocomplete="off">
+                            <button id="join-submit-btn" class="action-btn accent">Join →</button>
+                        </div>
+                    </div>
+
+                    <!-- Join Mode Helper -->
+                    <div class="join-mode-helper">
+                        <div class="join-divider">
+                            <span class="divider-text">OR</span>
+                        </div>
+                        <div class="discovery-hint">
+                            <span class="hint-icon">💡</span>
+                            <span class="hint-text">Browse local games below to join without a code</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Options (only shown in create mode) -->
+                <div id="game-options-section">
+                <div class="options-bar">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" id="enable-discovery">
+                        <span class="checkmark"></span>
+                        <span class="checkbox-text">Discoverable</span>
+                    </label>
+                    
+                    <div class="options-row">
+                        <div class="dice-count-selector">
+                            <label class="dice-count-label">🎲 Dice:</label>
+                            <div class="dice-count-options">
+                                <label class="dice-count-option">
+                                    <input type="radio" name="dice-count" value="1" checked>
+                                    <span class="dice-count-button">1 Die</span>
+                                </label>
+                                <label class="dice-count-option">
+                                    <input type="radio" name="dice-count" value="2">
+                                    <span class="dice-count-button">2 Dice</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="snake-threshold-selector">
+                            <label class="snake-threshold-label">🐍⚡ Power:</label>
+                            <div class="snake-threshold-options">
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="2">
+                                    <span class="snake-threshold-button">2</span>
+                                </label>
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="3" checked>
+                                    <span class="snake-threshold-button">3</span>
+                                </label>
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="4">
+                                    <span class="snake-threshold-button">4</span>
+                                </label>
+                                <label class="snake-threshold-option">
+                                    <input type="radio" name="snake-threshold" value="5">
+                                    <span class="snake-threshold-button">5</span>
+                                </label>
+                            </div>
+                            <div class="snake-threshold-hint">Snakes needed for revenge power</div>
+                        </div>
+                    </div>
+
+                    <div class="randomization-section">
+                        <label class="checkbox-inline randomization-toggle">
+                            <input type="checkbox" id="enable-randomization">
+                            <span class="checkmark"></span>
+                            <span class="checkbox-text">🎲 Random Snakes & Ladders</span>
+                        </label>
+
+                        <div id="randomization-config" class="randomization-config" style="display: none;">
+                            <div class="randomization-hint">🐍🪜 Each game will have unique snake and ladder positions!</div>
+                        </div>
+                    </div>
+
+                    <div class="game-rules-section">
+                        <label class="checkbox-inline">
+                            <input type="checkbox" id="require-six-to-start">
+                            <span class="checkmark"></span>
+                            <span class="checkbox-text">🎯 Roll 6 to Start</span>
+                        </label>
+                        <div class="rule-hint">Players must roll a 6 before entering the board at tile 1</div>
+
+                        <label class="checkbox-inline">
+                            <input type="checkbox" id="exact-roll-to-win">
+                            <span class="checkmark"></span>
+                            <span class="checkbox-text">🏁 Exact Roll to Win</span>
+                        </label>
+                        <div class="rule-hint">Must land exactly on tile 100 - overshoot bounces you back!</div>
+                    </div>
+
+                    <div class="mines-section">
+                        <label class="checkbox-inline mines-toggle">
+                            <input type="checkbox" id="enable-mines">
+                            <span class="checkmark"></span>
+                            <span class="checkbox-text">💣 Enable Mines</span>
+                        </label>
+                        
+                        <div id="mines-config" class="mines-config" style="display: none;">
+                            <label class="mines-count-label">Number of Mines:</label>
+                            <div class="mines-count-slider">
+                                <input type="range" id="mines-count" min="3" max="15" value="5" step="1">
+                                <span id="mines-count-value" class="mines-count-value">5</span>
+                            </div>
+
+                            <label class="checkbox-inline ladder-mines-toggle">
+                                <input type="checkbox" id="ladder-mines-only">
+                                <span class="checkmark"></span>
+                                <span class="checkbox-text">🪜 Only at Ladder Tops</span>
+                            </label>
+
+                            <div class="mines-hint">💣 Land on a mine → tile becomes a void ⚫ → fall to tile 1!</div>
+                            <div class="mines-hint ladder-mines-hint" style="display: none;">🪜 Mines will only appear at the top of ladders!</div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Local Games (shown in both modes) -->
+                <div id="local-games-section" class="local-games">
+                    <div class="games-header">
+                        <span class="games-title">🔍 Local Games</span>
+                        <button id="refresh-games-btn" class="btn-refresh">
+                            <span class="refresh-icon">🔄</span>
+                        </button>
+                    </div>
+                    <div id="local-games-list" class="local-games-list">
+                        <div class="no-games-message">
+                            <span class="no-games-icon">🔍</span>
+                            <p>No local games found</p>
+                            <p class="no-games-hint">Create a discoverable game to see it here</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="screen">
+            <div class="lobby-card">
+                <div class="lobby-header">
+                    <h2 class="lobby-title">Game Lobby</h2>
+                    <div class="room-code-display">
+                        <span class="room-code-label">Room Code:</span>
+                        <span id="room-code-display" class="room-code-value"></span>
+                        <button id="copy-room-code" class="btn-copy" title="Copy room code">📋</button>
+                    </div>
+                </div>
+
+                <div class="players-section">
+                    <h3 class="section-title">Players</h3>
+                    <div id="players-list" class="players-list"></div>
+                </div>
+
+                <div class="lobby-controls">
+                    <button id="ready-btn" class="btn btn-ready">Ready</button>
+                    <button id="start-game-btn" class="btn btn-primary" style="display: none;">Start Game</button>
+                </div>
+
+                <p class="lobby-info">Waiting for all players to be ready...</p>
+                
+                <button id="leave-lobby-btn" class="btn btn-disconnect">Leave Game</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-container">
+                <!-- Mobile Top Bar -->
+                <div class="mobile-top-bar" id="mobile-top-bar">
+                    <div class="mobile-turn-info">
+                        <div id="mobile-current-turn" class="mobile-current-turn"></div>
+                        <div id="mobile-last-roll" class="mobile-last-roll"></div>
+                    </div>
+                    <div class="mobile-scoreboard">
+                        <div id="mobile-scoreboard-list" class="mobile-scoreboard-list"></div>
+                    </div>
+                    <!-- Mobile Settings Dropdown -->
+                    <div class="mobile-settings-dropdown">
+                        <button id="mobile-settings-btn" class="mobile-settings-btn">
+                            <span class="settings-icon">⚙️</span>
+                        </button>
+                        <div id="mobile-settings-menu" class="mobile-settings-menu">
+                            <button id="mobile-reset-btn" class="mobile-menu-item">
+                                <span class="menu-icon">🔄</span>
+                                Reset Game
+                            </button>
+                            <button id="mobile-leave-btn" class="mobile-menu-item leave">
+                                <span class="menu-icon">🚪</span>
+                                Leave Game
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="game-sidebar" id="game-sidebar">
+                    <div class="game-info">
+                        <h3 class="game-title">🎲 Snakes & Ladders</h3>
+                        <div id="current-turn-display" class="current-turn"></div>
+                        <div id="last-roll-display" class="last-roll"></div>
+                    </div>
+
+                    <div class="players-scoreboard">
+                        <h4 class="scoreboard-title">Players</h4>
+                        <div id="scoreboard-list" class="scoreboard-list"></div>
+                    </div>
+
+                    <div class="game-controls">
+                        <button id="roll-dice-btn" class="btn btn-dice">
+                            <span class="dice-icon">🎲</span>
+                            Roll Dice
+                        </button>
+                        <button id="dice-control-power-btn" class="btn btn-power" style="display: none;">
+                            <span class="power-icon-btn">🐍⚡</span>
+                            Revenge Power
+                        </button>
+                        <button id="reset-game-btn" class="btn btn-reset">Reset Game</button>
+                        <button id="leave-game-btn" class="btn btn-disconnect">Leave Game</button>
+                    </div>
+                </div>
+
+                <!-- Mobile Floating Buttons -->
+                <button id="mobile-camera-btn" class="mobile-camera-btn">
+                    <span class="camera-icon">📷</span>
+                </button>
+                <button id="mobile-power-btn" class="mobile-power-btn" style="display: none;">
+                    <span class="power-icon">🐍⚡</span>
+                </button>
+                <button id="mobile-roll-btn" class="mobile-roll-btn">
+                    <span class="dice-icon">🎲</span>
+                </button>
+
+                <div class="board-container">
+                    <canvas id="game-board" width="800" height="800"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Winner Modal -->
+        <div id="winner-modal" class="modal">
+            <div class="winner-modal-content">
+                <!-- Confetti Background -->
+                <div class="confetti-container">
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                    <div class="confetti"></div>
+                </div>
+
+                <!-- Trophy Animation -->
+                <div class="trophy-container">
+                    <div class="trophy">🏆</div>
+                    <div class="trophy-glow"></div>
+                </div>
+
+                <!-- Winner Info -->
+                <div class="winner-info">
+                    <div class="winner-crown">👑</div>
+                    <h1 id="winner-name" class="winner-title"></h1>
+                    <div class="winner-subtitle">Champion!</div>
+                    <div class="winner-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Final Position</span>
+                            <span class="stat-value">100</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Rolled</span>
+                            <span id="winner-rolls" class="stat-value">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="winner-actions">
+                    <button id="play-again-btn" class="btn btn-win-primary">
+                        <span class="btn-icon">🎮</span>
+                        Play Again
+                    </button>
+                    <button id="new-game-btn" class="btn btn-win-secondary">
+                        <span class="btn-icon">🎯</span>
+                        New Game
+                    </button>
+                </div>
+
+                <!-- Sparkle Effects -->
+                <div class="sparkle sparkle-1">✨</div>
+                <div class="sparkle sparkle-2">✨</div>
+                <div class="sparkle sparkle-3">✨</div>
+                <div class="sparkle sparkle-4">✨</div>
+                <div class="sparkle sparkle-5">✨</div>
+                <div class="sparkle sparkle-6">✨</div>
+            </div>
+        </div>
+
+        <!-- Notification Toast -->
+        <div id="notification" class="notification"></div>
+
+        <!-- Color Conflict Modal -->
+        <div id="conflict-modal" class="modal">
+            <div class="modal-content">
+                <div class="conflict-icon">⚠️</div>
+                <h2 class="conflict-title">Player Conflict Detected!</h2>
+                <p id="conflict-message" class="conflict-message"></p>
+                <div class="conflict-options">
+                    <button id="keep-customization-btn" class="btn btn-secondary">Keep My Choice</button>
+                    <button id="change-customization-btn" class="btn btn-primary">Choose Different</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dice Control Modal -->
+        <div id="dice-control-modal" class="modal">
+            <div class="modal-content dice-control-content">
+                <div class="power-icon">🐍⚡</div>
+                <h2 class="power-title">Revenge Power Activated!</h2>
+                <p class="power-message">You've been bitten by 3 snakes! Control another player's next dice roll...</p>
+                
+                <div class="control-section">
+                    <label class="control-label">Select Target Player:</label>
+                    <select id="target-player-select" class="target-player-select">
+                        <option value="">Choose a player...</option>
+                    </select>
+                </div>
+
+                <div class="control-section">
+                    <label class="control-label">Set Dice Values:</label>
+                    <div id="dice-value-controls" class="dice-value-controls">
+                        <!-- Dynamically populated based on dice count -->
+                    </div>
+                </div>
+
+                <div class="control-actions">
+                    <button id="set-control-btn" class="btn btn-primary">Set Controlled Roll</button>
+                    <button id="cancel-control-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dice Animation -->
+        <div id="dice-backdrop" class="dice-backdrop"></div>
+        <div id="dice-container" class="dice-container">
+            <div id="dice" class="dice"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
