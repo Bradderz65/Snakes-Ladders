@@ -502,6 +502,30 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="game.js"></script>
+    <!-- Core modules (load first) -->
+    <script src="js/config.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/dom.js"></script>
+    
+    <!-- Systems -->
+    <script src="js/audio.js"></script>
+    <script src="js/performance.js"></script>
+    <script src="js/camera.js"></script>
+    
+    <!-- Rendering -->
+    <script src="js/rendering-draw.js"></script>
+    <script src="js/explosions.js"></script>
+    <script src="js/renderer.js"></script>
+    
+    <!-- Game logic -->
+    <script src="js/animations.js"></script>
+    <script src="js/customization.js"></script>
+    <script src="js/discovery.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/socket-handlers.js"></script>
+    
+    <!-- Main initialization (load last) -->
+    <script src="js/main.js"></script>
 </body>
 </html>

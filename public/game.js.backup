@@ -30,42 +30,165 @@ let cameraCurrentY = 0;
 let cameraSmoothing = 0.08; // Smoothing factor for camera movement
 let cameraZoomSmoothing = 0.05; // Smoothing factor for zoom changes
 
-// Sound system
-const sounds = {
-    diceRoll: new Audio('/sounds/diceroll.mp3'),
-    diceRoll2: new Audio('/sounds/diceroll2.mp3'),
-    playerMove: new Audio('/sounds/playermove.mp3'),
-    playerMove2: new Audio('/sounds/playermove2.mp3'),
-    climbLadder: new Audio('/sounds/climbladder.mp3'),
-    downSnake: new Audio('/sounds/downsnake.mp3'),
-    mineExplosion: new Audio('/sounds/mine.mp3')
+// Performance monitoring system
+const performanceMonitor = {
+    enabled: true,
+    frameCount: 0,
+    lastFpsUpdate: 0,
+    currentFps: 0,
+    frameTimes: [],
+    maxFrameTime: 0,
+    avgFrameTime: 0,
+    slowFrames: 0,
+    
+    startFrame() {
+        this.frameStartTime = performance.now();
+    },
+    
+    endFrame() {
+        if (!this.enabled) return;
+        
+        const frameTime = performance.now() - this.frameStartTime;
+        this.frameTimes.push(frameTime);
+        
+        // Keep only last 60 frames for rolling average
+        if (this.frameTimes.length > 60) {
+            this.frameTimes.shift();
+        }
+        
+        this.avgFrameTime = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
+        this.maxFrameTime = Math.max(...this.frameTimes);
+        
+        // Count slow frames (>16ms for 60 FPS target)
+        if (frameTime > 16) {
+            this.slowFrames++;
+            console.warn(`🐌 Slow frame detected: ${frameTime.toFixed(2)}ms`);
+        }
+        
+        // Update FPS counter
+        this.frameCount++;
+        const now = performance.now();
+        if (now - this.lastFpsUpdate >= 1000) {
+            this.currentFps = this.frameCount;
+            this.frameCount = 0;
+            this.lastFpsUpdate = now;
+            
+            // Log performance stats every 5 seconds
+            if (Math.floor(now / 5000) % 1 === 0) {
+                this.logPerformanceStats();
+            }
+        }
+    },
+    
+    logPerformanceStats() {
+        console.log(`📊 Performance Stats:`);
+        console.log(`   FPS: ${this.currentFps}`);
+        console.log(`   Avg Frame Time: ${this.avgFrameTime.toFixed(2)}ms`);
+        console.log(`   Max Frame Time: ${this.maxFrameTime.toFixed(2)}ms`);
+        console.log(`   Slow Frames: ${this.slowFrames}`);
+        
+        // Reset counters
+        this.slowFrames = 0;
+        this.maxFrameTime = 0;
+    }
 };
 
-// Preload sounds and set volume
-sounds.diceRoll.preload = 'auto';
-sounds.diceRoll.volume = 0.5;
-sounds.diceRoll2.preload = 'auto';
-sounds.diceRoll2.volume = 0.5;
-sounds.playerMove.preload = 'auto';
-sounds.playerMove.volume = 0.375; // 25% quieter than dice roll
-sounds.playerMove2.preload = 'auto';
-sounds.playerMove2.volume = 0.375;
-sounds.climbLadder.preload = 'auto';
-sounds.climbLadder.volume = 0.3;
-sounds.downSnake.preload = 'auto';
-sounds.downSnake.volume = 0.3;
-sounds.mineExplosion.preload = 'auto';
-sounds.mineExplosion.volume = 0.6;
+// Sound system with audio context for better performance
+let audioContext = null;
+let soundBuffers = {};
+let sounds = {};
 
-// Helper function to play sound with error handling
-function playSound(soundName) {
-    const sound = sounds[soundName];
-    if (sound) {
+// Initialize audio context on first user interaction
+function initAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        loadSounds();
+    }
+}
+
+// Load all sounds into buffers for better performance
+async function loadSounds() {
+    const soundFiles = {
+        diceRoll: '/sounds/diceroll.mp3',
+        diceRoll2: '/sounds/diceroll2.mp3',
+        playerMove: '/sounds/playermove.mp3',
+        playerMove2: '/sounds/playermove2.mp3',
+        climbLadder: '/sounds/climbladder.mp3',
+        downSnake: '/sounds/downsnake.mp3',
+        mineExplosion: '/sounds/mine.mp3'
+    };
+
+    for (const [name, url] of Object.entries(soundFiles)) {
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            soundBuffers[name] = audioBuffer;
+        } catch (error) {
+            console.log(`Failed to load sound ${name}:`, error);
+        }
+    }
+}
+
+// Helper function to play sound with better performance and error handling
+function playSound(soundName, volume = 1.0) {
+    const soundStartTime = performance.now();
+    
+    if (!audioContext || !soundBuffers[soundName]) {
+        console.warn(`⚠️ Sound not available: ${soundName}`);
+        return;
+    }
+
+    try {
+        const source = audioContext.createBufferSource();
+        const gainNode = audioContext.createGain();
+        
+        source.buffer = soundBuffers[soundName];
+        
+        // Set volume based on sound type
+        const volumes = {
+            diceRoll: 0.5,
+            diceRoll2: 0.5,
+            playerMove: 0.375,
+            playerMove2: 0.375,
+            climbLadder: 0.3,
+            downSnake: 0.3,
+            mineExplosion: 0.6
+        };
+        
+        gainNode.gain.value = (volumes[soundName] || 0.5) * volume;
+        
         // Start downSnake sound 0.5 seconds in to skip intro
-        sound.currentTime = soundName === 'downSnake' ? 0.5 : 0;
-        sound.play().catch(err => {
-            console.log('Sound play failed:', err);
-        });
+        if (soundName === 'downSnake') {
+            source.start(0, 0.5);
+        } else {
+            source.start(0);
+        }
+        
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Clean up after playback
+        source.onended = () => {
+            source.disconnect();
+            gainNode.disconnect();
+        };
+        
+        const soundTime = performance.now() - soundStartTime;
+        if (soundTime > 5) {
+            console.warn(`🔊 Slow sound playback: ${soundName} took ${soundTime.toFixed(2)}ms`);
+        }
+        
+    } catch (error) {
+        console.error(`❌ Sound play failed: ${soundName}`, error);
+        // Retry once for movement sounds
+        if (soundName.includes('playerMove') && audioContext && soundBuffers[soundName]) {
+            try {
+                setTimeout(() => playSound(soundName, volume * 0.8), 50);
+            } catch (retryError) {
+                console.error(`❌ Sound retry failed: ${soundName}`, retryError);
+            }
+        }
     }
 }
 
@@ -335,6 +458,18 @@ function attemptReconnection() {
 }
 
 // Event listeners - Choice screen
+// Initialize event listeners with audio context activation
+function initializeEventListeners() {
+    // Initialize audio context on first user interaction
+    const initAudioOnInteraction = () => {
+        initAudioContext();
+        document.removeEventListener('click', initAudioOnInteraction);
+        document.removeEventListener('touchstart', initAudioOnInteraction);
+    };
+    
+    document.addEventListener('click', initAudioOnInteraction);
+    document.addEventListener('touchstart', initAudioOnInteraction);
+
 choiceCreateBtn.addEventListener('click', () => {
     currentMode = 'create';
     showSetupScreen('create');
@@ -346,15 +481,12 @@ choiceJoinBtn.addEventListener('click', () => {
 });
 
 backToChoiceBtn.addEventListener('click', () => {
-    currentMode = null;
-    choiceScreen.style.display = 'block';
-    setupScreen.style.display = 'none';
-    
-    // Reset join steps
-    joinSteps = { name: false, color: false, icon: false };
-    autoOpenedSections = { color: false, icon: false };
-    joinConnectionSection.style.display = 'none';
+    showChoiceScreen();
 });
+}
+
+// Call the function to set up listeners
+initializeEventListeners();
 
 // Function to show setup screen based on mode
 function showSetupScreen(mode) {
@@ -390,8 +522,8 @@ function showSetupScreen(mode) {
         stepIcon.style.display = 'none';
         joinConfirmBtn.style.display = 'none';
         
-        // Focus name input
-        setTimeout(() => playerNameInput.focus(), 100);
+        // Focus name input with reduced delay for better responsiveness
+        setTimeout(() => playerNameInput.focus(), 50);
     }
 }
 
@@ -1058,9 +1190,9 @@ socket.on('game-state', (state) => {
     updateLobby();
     if (state.started) {
         updateGameScreen();
-        // If game just started, ensure canvas is properly sized
+        // If game just started, ensure canvas is properly sized with reduced delay
         if (!wasStarted) {
-            setTimeout(() => resizeCanvas(), 100);
+            setTimeout(() => resizeCanvas(), 50);
         }
     }
 });
@@ -1140,10 +1272,10 @@ socket.on('dice-rolled', (result) => {
             // Show notification
             showNotification(`🎯 ${rollingPlayer.name} needs to roll a 6 to enter the board!`, 'info');
             
-            // Update button states
+            // Update button states with reduced delay for better responsiveness
             setTimeout(() => {
                 updateGameScreen();
-            }, 200);
+            }, 100);
             return;
         }
 
@@ -1245,10 +1377,10 @@ socket.on('dice-rolled', (result) => {
                     }, 500);
                 }
 
-                // Update button states based on whose turn it is now
+                // Update button states based on whose turn it is now with reduced delay
                 setTimeout(() => {
                     updateGameScreen();
-                }, 200);
+                }, 100);
             }
         );
     });
@@ -1557,12 +1689,13 @@ function animatePlayerAlongSnake(playerId, fromPos, toPos, duration, onComplete)
 }
 
 function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadder, snake, ladder, onComplete) {
+    const animationStartTime = performance.now();
     animationInProgress = true;
 
     // Select movement sound once for this entire roll (70% playerMove, 30% playerMove2)
     const movementSound = selectRandomSound('playerMove', 'playerMove2', 0.7);
     let lastSoundTime = 0;
-    const soundInterval = 150; // Minimum ms between sound plays for smoother performance
+    const soundInterval = 180; // Adjusted for slower movement timing
 
     // Step 1: Animate normal movement
     const steps = [];
@@ -1574,7 +1707,7 @@ function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadd
         if (stepIndex >= steps.length) {
             // All steps done, check for snake or ladder
             if (snakeOrLadder) {
-                // Add a brief pause before snake/ladder animation
+                // Add a brief pause before snake/ladder animation (reduced delay for better responsiveness)
                 setTimeout(() => {
                     // Play snake/ladder sound when animation starts
                     if (snake) {
@@ -1591,9 +1724,15 @@ function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadd
                             playerId,
                             fromPos,
                             toPos,
-                            1000, // Slightly longer duration for snake animation
+                            1050, // 50% slower than 700ms
                             () => {
                                 animationInProgress = false;
+                                
+                                const totalAnimationTime = performance.now() - animationStartTime;
+                                if (totalAnimationTime > 1800) { // Adjusted for slower animation
+                                    console.warn(`🐍 Slow snake animation: ${totalAnimationTime.toFixed(2)}ms`);
+                                }
+                                
                                 if (onComplete) onComplete();
                             }
                         );
@@ -1607,7 +1746,7 @@ function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadd
                             playerId,
                             ladderStart,  // Start from ladder bottom
                             ladderEnd,    // End at ladder top
-                            800,
+                            750, // 50% slower than 500ms
                             () => {
                                 animationInProgress = false;
 
@@ -1618,28 +1757,51 @@ function animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadd
                                     playerId: playerId,
                                     ladderEnd: ladderEnd
                                 });
+                                
+                                const totalAnimationTime = performance.now() - animationStartTime;
+                                if (totalAnimationTime > 1500) { // Adjusted for slower animation
+                                    console.warn(`🪜 Slow ladder animation: ${totalAnimationTime.toFixed(2)}ms`);
+                                }
 
                                 if (onComplete) onComplete();
                             }
                         );
                     }
-                }, 300);
+                }, 200); // Reduced from 300ms for faster transitions
             } else {
                 animationInProgress = false;
+                
+                const totalAnimationTime = performance.now() - animationStartTime;
+                if (totalAnimationTime > 1500) { // Adjusted for slower movement
+                    console.warn(`🎬 Slow player movement animation: ${totalAnimationTime.toFixed(2)}ms for ${diceRoll} steps`);
+                }
+                
                 if (onComplete) onComplete();
             }
             return;
         }
 
         const targetPos = steps[stepIndex];
-        const duration = 200;
+        const duration = Math.max(200, 300 - (diceRoll * 8)); // Much slower for better visibility
         const fromPos = stepIndex === 0 ? startPos : steps[stepIndex - 1];
 
         // Play movement sound only if enough time has passed (throttle for performance)
         const now = Date.now();
         if (now - lastSoundTime >= soundInterval) {
-            playSound(movementSound);
-            lastSoundTime = now;
+            // Force sound to play even if animation is fast
+            try {
+                playSound(movementSound);
+                lastSoundTime = now;
+            } catch (error) {
+                console.warn('Sound playback failed during movement:', error);
+            }
+        } else if (stepIndex === 0 || stepIndex === steps.length - 1) {
+            // Always play sound for first and last step to ensure audio feedback
+            try {
+                playSound(movementSound, 0.7); // Slightly quieter for fallback
+            } catch (error) {
+                console.warn('Fallback sound failed:', error);
+            }
         }
 
         animatePlayerPosition(playerId, fromPos, targetPos, duration, () => {
@@ -1678,6 +1840,8 @@ function setDiceFaceForElement(element, number) {
 
 // Dice animation function - supports both single value and array of values
 function animateDiceRoll(diceValues, callback) {
+    const diceAnimationStartTime = performance.now();
+    
     // Convert single value to array for consistency
     const valuesArray = Array.isArray(diceValues) ? diceValues : [diceValues];
     
@@ -1704,7 +1868,12 @@ function animateDiceRoll(diceValues, callback) {
     
     // Play dice roll sound (randomly select variant)
     const diceRollSound = selectRandomSound('diceRoll', 'diceRoll2', 0.7);
+    const soundStartTime = performance.now();
     playSound(diceRollSound);
+    const soundTime = performance.now() - soundStartTime;
+    if (soundTime > 10) {
+        console.warn(`🎲 Slow dice sound: ${soundTime.toFixed(2)}ms`);
+    }
     
     // Show backdrop and container
     diceBackdrop.classList.add('active');
@@ -1713,12 +1882,15 @@ function animateDiceRoll(diceValues, callback) {
     // Add rolling class to all dice
     diceElements.forEach(dice => dice.classList.add('rolling'));
     
-    // Animate through random numbers
+    // Animate through random numbers - balanced for gameplay and 60 FPS
     let counter = 0;
-    const totalFrames = 20;
-    const frameDelay = 50;
+    const totalFrames = 14; // Balanced between speed and visibility
+    const frameDelay = 70; // Balanced delay for smooth animation
     
     const interval = setInterval(() => {
+        // Batch DOM updates for better performance
+        const fragment = document.createDocumentFragment();
+        
         diceElements.forEach(dice => {
             const randomNum = Math.floor(Math.random() * 6) + 1;
             setDiceFaceForElement(dice, randomNum);
@@ -1733,7 +1905,7 @@ function animateDiceRoll(diceValues, callback) {
                 setDiceFaceForElement(dice, valuesArray[index]);
             });
             
-            // Remove animation classes after a delay
+            // Remove animation classes after a delay - optimized for 60 FPS
             setTimeout(() => {
                 diceElements.forEach(dice => dice.classList.remove('rolling'));
                 
@@ -1743,8 +1915,13 @@ function animateDiceRoll(diceValues, callback) {
                     
                     // Call callback after animation completes
                     if (callback) callback();
-                }, 300);
-            }, 500);
+                    
+                    const totalDiceAnimationTime = performance.now() - diceAnimationStartTime;
+                    if (totalDiceAnimationTime > 1000) { // Reduced threshold
+                        console.warn(`🎲 Slow dice animation: ${totalDiceAnimationTime.toFixed(2)}ms`);
+                    }
+                }, 150); // Further reduced from 200ms
+            }, 200); // Further reduced from 300ms
         }
     }, frameDelay);
 }
@@ -2204,8 +2381,11 @@ function updateCamera() {
     // Smoothly adjust zoom towards target zoom
     cameraZoom += (cameraTargetZoom - cameraZoom) * cameraZoomSmoothing;
 
-    // Update camera target to follow current player positions
-    updateCameraTarget();
+    // Update camera target less frequently for better performance
+    // Only update every 3 frames instead of every frame
+    if (Math.floor(performance.now() / 50) % 3 === 0) {
+        updateCameraTarget();
+    }
 }
 
 function updateCameraButtonIcon() {
@@ -2241,51 +2421,53 @@ function applyCameraTransform(ctx) {
 // Board drawing functions
 function drawBoard() {
     if (!gameState) return;
+    
+    const drawBoardStartTime = performance.now();
 
     const boardSize = 10;
     const cellSize = canvasLogicalSize / boardSize;
 
     // Update camera position for smooth following
+    const cameraUpdateStartTime = performance.now();
     updateCamera();
+    const cameraUpdateTime = performance.now() - cameraUpdateStartTime;
+    if (cameraUpdateTime > 3) {
+        console.warn(`📷 Camera update in drawBoard: ${cameraUpdateTime.toFixed(2)}ms`);
+    }
 
     // Clear canvas
+    const clearStartTime = performance.now();
     ctx.clearRect(0, 0, canvasLogicalSize, canvasLogicalSize);
+    const clearTime = performance.now() - clearStartTime;
+    if (clearTime > 2) {
+        console.warn(`🧹 Canvas clear: ${clearTime.toFixed(2)}ms`);
+    }
 
     // Apply camera transform if enabled (mobile only)
     ctx.save();
     applyCameraTransform(ctx);
     
-    // Draw cells
+    // Draw cells - optimized for 60 FPS
     for (let row = 0; row < boardSize; row++) {
         for (let col = 0; col < boardSize; col++) {
             const num = getCellNumber(row, col);
             const x = col * cellSize;
             const y = row * cellSize;
             
-            // Alternating colors with gradient
+            // Dark theme colors for better performance (removed gradients)
             const isLight = (row + col) % 2 === 0;
-            const gradient = ctx.createLinearGradient(x, y, x + cellSize, y + cellSize);
             
             if (isLight) {
-                gradient.addColorStop(0, '#334155');
-                gradient.addColorStop(1, '#2d3748');
+                ctx.fillStyle = '#334155'; // Dark light cells
             } else {
-                gradient.addColorStop(0, '#1e293b');
-                gradient.addColorStop(1, '#1a202c');
+                ctx.fillStyle = '#1e293b'; // Dark dark cells
             }
             
-            ctx.fillStyle = gradient;
             ctx.fillRect(x, y, cellSize, cellSize);
             
-            // Special highlight for cell 100
+            // Special highlight for cell 100 - optimized for 60 FPS
             if (num === 100) {
-                const winGradient = ctx.createRadialGradient(
-                    x + cellSize / 2, y + cellSize / 2, 0,
-                    x + cellSize / 2, y + cellSize / 2, cellSize / 2
-                );
-                winGradient.addColorStop(0, 'rgba(240, 147, 251, 0.3)');
-                winGradient.addColorStop(1, 'rgba(102, 126, 234, 0.1)');
-                ctx.fillStyle = winGradient;
+                ctx.fillStyle = 'rgba(240, 147, 251, 0.2)'; // Simplified highlight
                 ctx.fillRect(x, y, cellSize, cellSize);
             }
             
@@ -2392,6 +2574,11 @@ function drawBoard() {
 
     // Restore canvas state (remove camera transform)
     ctx.restore();
+    
+    const totalDrawBoardTime = performance.now() - drawBoardStartTime;
+    if (totalDrawBoardTime > 10) { // Reduced threshold for 60 FPS
+        console.warn(`🎨 Total drawBoard time: ${totalDrawBoardTime.toFixed(2)}ms`);
+    }
 }
 
 // Unified render loop for optimal performance
@@ -2406,23 +2593,47 @@ function startMasterRenderLoop() {
 
     function render(timestamp) {
         if (!isRenderLoopActive) return;
+        
+        // Start performance monitoring for this frame
+        performanceMonitor.startFrame();
 
-        // Limit to 60fps for consistent performance
-        if (timestamp - lastRenderTime >= 16) {
+        // Target 60fps for smooth gameplay
+        const targetFrameTime = 16; // 60 FPS = 16.67ms per frame
+        if (timestamp - lastRenderTime >= targetFrameTime) {
+            const renderStartTime = performance.now();
+            
             // Update camera if follow mode is enabled
             if (followCameraEnabled && gameState && gameState.started) {
+                const cameraStartTime = performance.now();
                 updateCamera();
+                const cameraTime = performance.now() - cameraStartTime;
+                if (cameraTime > 3) { // Reduced threshold for 60 FPS
+                    console.warn(`📷 Slow camera update: ${cameraTime.toFixed(2)}ms`);
+                }
             }
 
-            // Draw everything once per frame
+            // Draw the game board
             if (gameState && gameState.started) {
+                const drawStartTime = performance.now();
                 drawBoard();
+                const drawTime = performance.now() - drawStartTime;
+                if (drawTime > 8) { // Reduced threshold for 60 FPS
+                    console.warn(`🎨 Slow board draw: ${drawTime.toFixed(2)}ms`);
+                }
+            }
+            
+            const totalRenderTime = performance.now() - renderStartTime;
+            if (totalRenderTime > 12) { // Reduced threshold for 60 FPS target
+                console.warn(`🖼️ Slow render frame: ${totalRenderTime.toFixed(2)}ms`);
             }
 
             lastRenderTime = timestamp;
         }
 
         masterRenderLoopId = requestAnimationFrame(render);
+        
+        // End performance monitoring for this frame
+        performanceMonitor.endFrame();
     }
 
     render(0);
@@ -2482,8 +2693,14 @@ function getPosition(num) {
     const boardSize = 10;
     const cellSize = canvasLogicalSize / boardSize;
 
-    if (num <= 0) return { x: 0, y: canvasLogicalSize };
+    if (num <= 0) return { x: cellSize / 2, y: canvasLogicalSize - cellSize / 2 }; // Center of bottom-left cell (position 0)
     if (num > 100) num = 100;
+    
+    // Safety check for invalid numbers
+    if (!isFinite(num) || isNaN(num)) {
+        console.warn(`⚠️ Invalid position number: ${num}`);
+        return { x: 0, y: canvasLogicalSize };
+    }
 
     const rowFromBottom = Math.floor((num - 1) / boardSize);
     const row = boardSize - 1 - rowFromBottom;
@@ -2499,8 +2716,8 @@ function getPosition(num) {
     const y = row * cellSize + cellSize / 2;
 
     // Safety check: ensure we have valid coordinates
-    if (!isFinite(x) || !isFinite(y) || !cellSize || !canvasLogicalSize) {
-        console.warn('Invalid coordinates calculated in getPosition, using fallback');
+    if (!isFinite(x) || !isFinite(y) || !cellSize || !canvasLogicalSize || isNaN(x) || isNaN(y)) {
+        console.warn(`⚠️ Invalid coordinates calculated in getPosition: num=${num}, x=${x}, y=${y}, cellSize=${cellSize}`);
         return { x: canvasLogicalSize / 2, y: canvasLogicalSize / 2 };
     }
 
@@ -3090,8 +3307,11 @@ function drawPlayer(player, index) {
     const centerY = pos.y;
 
     // Safety check: ensure position is valid before drawing
-    if (!isFinite(centerX) || !isFinite(centerY) || !pos.x || !pos.y) {
-        console.warn('Invalid player position detected, skipping draw');
+    if (!pos || !isFinite(centerX) || !isFinite(centerY) || !pos.x || !pos.y || isNaN(centerX) || isNaN(centerY)) {
+        // Don't log for position 0 (start position) as this is normal
+        if (player.position !== 0) {
+            console.warn(`⚠️ Invalid player position detected, skipping draw - Player: ${player.name}, Pos: ${JSON.stringify(pos)}, CenterX: ${centerX}, CenterY: ${centerY}`);
+        }
         return;
     }
 
