@@ -5,7 +5,7 @@ const CONFIG = {
     
     // Camera settings
     CAMERA: {
-        MIN_ZOOM: 1.2,
+        MIN_ZOOM: 0.45,
         MAX_ZOOM: 2.5,
         DEFAULT_ZOOM: 1.8,
         SMOOTHING: 0.08,
@@ -16,6 +16,7 @@ const CONFIG = {
     ANIMATION: {
         DICE_FRAMES: 14,
         DICE_FRAME_DELAY: 70,
+        DICE_RESULT_HOLD: 700,
         STEP_DURATION_BASE: 300,
         STEP_DURATION_REDUCTION: 8,
         SOUND_INTERVAL: 180,

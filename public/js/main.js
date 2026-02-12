@@ -297,20 +297,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     DOM.cancelControlBtn.addEventListener('click', () => {
         DOM.diceControlModal.classList.remove('active');
+        DOM.setControlBtn.disabled = false;
     });
 
     DOM.setControlBtn.addEventListener('click', () => {
-        const targetPlayerId = DOM.targetPlayerSelect.value;
+        const selectedTarget = DOM.targetPlayerOptions.querySelector('.target-player-option.selected');
+        const targetPlayerId = selectedTarget?.dataset.playerId;
         if (!targetPlayerId) {
             UI.showNotification('Please select a target player', 'error');
             return;
         }
 
         const diceValues = [];
-        const diceInputs = DOM.diceValueControls.querySelectorAll('input');
-        
-        for (const input of diceInputs) {
-            const value = parseInt(input.value);
+        const diceOptionGroups = DOM.diceValueControls.querySelectorAll('.dice-value-options');
+
+        for (const group of diceOptionGroups) {
+            const selectedOption = group.querySelector('.dice-value-option.selected');
+            const value = parseInt(selectedOption?.dataset.value, 10);
             if (isNaN(value) || value < 1 || value > 6) {
                 UI.showNotification('Dice values must be between 1 and 6', 'error');
                 return;
@@ -325,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         DOM.diceControlModal.classList.remove('active');
+        DOM.setControlBtn.disabled = false;
     });
 
     // Camera button

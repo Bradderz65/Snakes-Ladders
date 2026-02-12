@@ -371,19 +371,21 @@
                     </div>
                 </div>
 
-                <!-- Mobile Floating Buttons -->
-                <button id="mobile-camera-btn" class="mobile-camera-btn">
-                    <span class="camera-icon">📷</span>
-                    <span class="camera-label">Follow</span>
-                    <span class="camera-state">Off</span>
-                </button>
-                <button id="mobile-power-btn" class="mobile-power-btn" style="display: none;">
-                    <span class="power-icon">🐍⚡</span>
-                </button>
-                <button id="mobile-roll-btn" class="mobile-roll-btn">
-                    <span class="dice-icon">🎲</span>
-                    <span class="roll-label">Roll</span>
-                </button>
+                <!-- Mobile Bottom Controls -->
+                <div class="mobile-bottom-panel">
+                    <button id="mobile-camera-btn" class="mobile-camera-btn">
+                        <span class="camera-icon">📷</span>
+                        <span class="camera-label">Follow</span>
+                        <span class="camera-state">Off</span>
+                    </button>
+                    <button id="mobile-power-btn" class="mobile-power-btn" style="display: none;">
+                        <span class="power-icon">🐍⚡</span>
+                    </button>
+                    <button id="mobile-roll-btn" class="mobile-roll-btn">
+                        <span class="dice-icon">🎲</span>
+                        <span class="roll-label">Roll</span>
+                    </button>
+                </div>
 
                 <div class="board-container">
                     <div class="board-frame">
@@ -485,9 +487,9 @@
                 
                 <div class="control-section">
                     <label class="control-label">Select Target Player:</label>
-                    <select id="target-player-select" class="target-player-select">
-                        <option value="">Choose a player...</option>
-                    </select>
+                    <div id="target-player-options" class="target-player-options">
+                        <!-- Dynamically populated player options -->
+                    </div>
                 </div>
 
                 <div class="control-section">

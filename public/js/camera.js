@@ -7,37 +7,99 @@ const Camera = {
     targetY: 0,
     currentX: 0,
     currentY: 0,
+    framingPadding: 10,
+
+    resolveAnimationPoint(player, animation) {
+        if (!animation || !animation.locked) {
+            return Utils.getPosition(player.position);
+        }
+
+        if (animation.isFollowingSnake && animation.currentBezierPos) {
+            return animation.currentBezierPos;
+        }
+
+        const fromPos = typeof animation.from === 'number' ? Utils.getPosition(animation.from) : animation.from;
+        const toPos = typeof animation.to === 'number' ? Utils.getPosition(animation.to) : animation.to;
+        const progress = Number.isFinite(animation.progress) ? animation.progress : 0;
+
+        if (
+            fromPos && toPos &&
+            Number.isFinite(fromPos.x) && Number.isFinite(fromPos.y) &&
+            Number.isFinite(toPos.x) && Number.isFinite(toPos.y)
+        ) {
+            return {
+                x: fromPos.x + (toPos.x - fromPos.x) * progress,
+                y: fromPos.y + (toPos.y - fromPos.y) * progress
+            };
+        }
+
+        return Utils.getPosition(player.position);
+    },
+
+    getCanvasSize() {
+        const dpr = window.devicePixelRatio || 1;
+        return {
+            width: DOM.canvas.width / dpr,
+            height: DOM.canvas.height / dpr
+        };
+    },
+
+    getCenterBounds(zoomLevel) {
+        const { width, height } = this.getCanvasSize();
+        const boardSize = GameState.canvasLogicalSize || CONFIG.CANVAS_LOGICAL_SIZE;
+        const halfViewX = width / (2 * zoomLevel);
+        const halfViewY = height / (2 * zoomLevel);
+        const minX = halfViewX;
+        const maxX = boardSize - halfViewX;
+        const minY = halfViewY;
+        const maxY = boardSize - halfViewY;
+
+        // If zoomed out enough to show beyond board bounds, pin center to board midpoint.
+        if (minX > maxX || minY > maxY) {
+            const center = boardSize / 2;
+            return { minX: center, maxX: center, minY: center, maxY: center };
+        }
+
+        return { minX, maxX, minY, maxY };
+    },
+
+    clampCenter(x, y, zoomLevel) {
+        const bounds = this.getCenterBounds(zoomLevel);
+        return {
+            x: Math.max(bounds.minX, Math.min(bounds.maxX, x)),
+            y: Math.max(bounds.minY, Math.min(bounds.maxY, y))
+        };
+    },
     
     updateTarget() {
         if (!this.enabled || !GameState.gameState || !GameState.gameState.players || GameState.gameState.players.length === 0) return;
 
         const playerPositions = [];
-        let totalX = 0;
-        let totalY = 0;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
 
         GameState.gameState.players.forEach(player => {
-            let pos;
             const animation = GameState.playerAnimations[player.persistentId];
-            if (animation && animation.locked) {
-                const fromPos = Utils.getPosition(animation.from);
-                const toPos = Utils.getPosition(animation.to);
-                pos = {
-                    x: fromPos.x + (toPos.x - fromPos.x) * animation.progress,
-                    y: fromPos.y + (toPos.y - fromPos.y) * animation.progress
-                };
-            } else {
-                pos = Utils.getPosition(player.position);
-            }
+            const pos = this.resolveAnimationPoint(player, animation);
 
             playerPositions.push(pos);
-            totalX += pos.x;
-            totalY += pos.y;
+            minX = Math.min(minX, pos.x);
+            maxX = Math.max(maxX, pos.x);
+            minY = Math.min(minY, pos.y);
+            maxY = Math.max(maxY, pos.y);
         });
 
-        this.targetX = totalX / playerPositions.length;
-        this.targetY = totalY / playerPositions.length;
-
         this.calculateOptimalZoom(playerPositions);
+
+        const targetCenter = this.clampCenter(
+            (minX + maxX) / 2,
+            (minY + maxY) / 2,
+            this.targetZoom
+        );
+        this.targetX = targetCenter.x;
+        this.targetY = targetCenter.y;
     },
     
     calculateOptimalZoom(playerPositions) {
@@ -53,35 +115,39 @@ const Camera = {
             maxY = Math.max(maxY, pos.y);
         });
 
-        const spreadX = maxX - minX;
-        const spreadY = maxY - minY;
-        const maxSpread = Math.max(spreadX, spreadY);
+        const cellSize = (GameState.canvasLogicalSize || CONFIG.CANVAS_LOGICAL_SIZE) / CONFIG.BOARD_SIZE;
+        const playerRadius = cellSize * CONFIG.VISUAL.PLAYER_RADIUS_FACTOR;
+        // Keep margins tight so camera stays as zoomed in as possible while preserving visibility.
+        const edgePadding = Math.max(this.framingPadding, playerRadius + 4);
+        const spreadX = (maxX - minX) + (edgePadding * 2);
+        const spreadY = (maxY - minY) + (edgePadding * 2);
+        const { width: canvasWidth, height: canvasHeight } = this.getCanvasSize();
+        const zoomForWidth = canvasWidth / Math.max(spreadX, 1);
+        const zoomForHeight = canvasHeight / Math.max(spreadY, 1);
+        const requiredZoom = Math.min(zoomForWidth, zoomForHeight);
+        const boardSize = GameState.canvasLogicalSize || CONFIG.CANVAS_LOGICAL_SIZE;
+        const boardFitZoom = Math.min(canvasWidth / boardSize, canvasHeight / boardSize);
+        const minAllowedZoom = Math.min(CONFIG.CAMERA.MIN_ZOOM, boardFitZoom);
 
-        const padding = 100;
-        const requiredSpread = maxSpread + padding;
-
-        const canvas = DOM.canvas;
-        const isMobile = window.innerWidth <= 768;
-        const canvasWidth = canvas.width / (window.devicePixelRatio || 1);
-        const canvasHeight = canvas.height / (window.devicePixelRatio || 1);
-        const minCanvasDimension = Math.min(canvasWidth, canvasHeight);
-
-        const requiredZoom = minCanvasDimension / requiredSpread;
-
-        this.targetZoom = Math.max(CONFIG.CAMERA.MIN_ZOOM, Math.min(CONFIG.CAMERA.MAX_ZOOM, requiredZoom));
+        this.targetZoom = Math.max(minAllowedZoom, Math.min(CONFIG.CAMERA.MAX_ZOOM, requiredZoom));
     },
     
     update() {
         if (!this.enabled) return;
 
+        this.updateTarget();
+
         this.currentX += (this.targetX - this.currentX) * CONFIG.CAMERA.SMOOTHING;
         this.currentY += (this.targetY - this.currentY) * CONFIG.CAMERA.SMOOTHING;
 
-        this.zoom += (this.targetZoom - this.zoom) * CONFIG.CAMERA.ZOOM_SMOOTHING;
+        const zoomSmoothing = this.targetZoom > this.zoom
+            ? Math.max(CONFIG.CAMERA.ZOOM_SMOOTHING, 0.16)
+            : CONFIG.CAMERA.ZOOM_SMOOTHING;
+        this.zoom += (this.targetZoom - this.zoom) * zoomSmoothing;
 
-        if (Math.floor(performance.now() / 50) % CONFIG.PERFORMANCE.CAMERA_UPDATE_THROTTLE === 0) {
-            this.updateTarget();
-        }
+        const clampedCurrent = this.clampCenter(this.currentX, this.currentY, this.zoom);
+        this.currentX = clampedCurrent.x;
+        this.currentY = clampedCurrent.y;
     },
     
     apply(ctx) {

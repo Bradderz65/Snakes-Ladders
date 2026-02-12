@@ -222,6 +222,7 @@ const Animations = {
         let counter = 0;
         const totalFrames = CONFIG.ANIMATION.DICE_FRAMES;
         const frameDelay = CONFIG.ANIMATION.DICE_FRAME_DELAY;
+        const resultHold = CONFIG.ANIMATION.DICE_RESULT_HOLD || 550;
         
         const interval = setInterval(() => {
             diceElements.forEach(dice => {
@@ -251,7 +252,7 @@ const Animations = {
                             console.warn(`🎲 Slow dice animation: ${totalDiceAnimationTime.toFixed(2)}ms`);
                         }
                     }, 150);
-                }, 200);
+                }, resultHold);
             }
         }, frameDelay);
     },

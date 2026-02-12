@@ -267,15 +267,43 @@ const UI = {
             powerMessage.textContent = `You've been bitten by ${threshold} snakes! Control another player's next dice roll...`;
         }
 
-        DOM.targetPlayerSelect.innerHTML = '<option value="">Choose a player...</option>';
+        DOM.targetPlayerOptions.innerHTML = '';
+        let selectablePlayers = 0;
         GameState.gameState.players.forEach(player => {
             if (player.persistentId !== GameState.currentPlayer.persistentId) {
-                const option = document.createElement('option');
-                option.value = player.persistentId;
-                option.textContent = `${player.icon} ${player.name}`;
-                DOM.targetPlayerSelect.appendChild(option);
+                selectablePlayers++;
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'target-player-option';
+                option.dataset.playerId = player.persistentId;
+                option.setAttribute('aria-pressed', 'false');
+                option.innerHTML = `
+                    <span class="player-option-icon">${player.icon || '🙂'}</span>
+                    <span class="player-option-name">${player.name}</span>
+                `;
+                DOM.targetPlayerOptions.appendChild(option);
             }
         });
+
+        if (selectablePlayers === 0) {
+            DOM.targetPlayerOptions.innerHTML = '<div class="target-player-empty">No available target players</div>';
+            DOM.targetPlayerOptions.onclick = null;
+            DOM.setControlBtn.disabled = true;
+        } else {
+            DOM.setControlBtn.disabled = false;
+            DOM.targetPlayerOptions.onclick = (event) => {
+                const option = event.target.closest('.target-player-option');
+                if (!option) return;
+
+                DOM.targetPlayerOptions.querySelectorAll('.target-player-option').forEach(button => {
+                    button.classList.remove('selected');
+                    button.setAttribute('aria-pressed', 'false');
+                });
+
+                option.classList.add('selected');
+                option.setAttribute('aria-pressed', 'true');
+            };
+        }
 
         DOM.diceValueControls.innerHTML = '';
         for (let i = 0; i < GameState.currentDiceCount; i++) {
@@ -283,10 +311,32 @@ const UI = {
             diceInput.className = 'dice-value-input';
             diceInput.innerHTML = `
                 <label>Die ${i + 1}</label>
-                <input type="number" min="1" max="6" value="1" />
+                <div class="dice-value-options" role="radiogroup" aria-label="Die ${i + 1} value">
+                    <button type="button" class="dice-value-option selected" data-value="1" aria-pressed="true">1</button>
+                    <button type="button" class="dice-value-option" data-value="2" aria-pressed="false">2</button>
+                    <button type="button" class="dice-value-option" data-value="3" aria-pressed="false">3</button>
+                    <button type="button" class="dice-value-option" data-value="4" aria-pressed="false">4</button>
+                    <button type="button" class="dice-value-option" data-value="5" aria-pressed="false">5</button>
+                    <button type="button" class="dice-value-option" data-value="6" aria-pressed="false">6</button>
+                </div>
             `;
             DOM.diceValueControls.appendChild(diceInput);
         }
+
+        DOM.diceValueControls.querySelectorAll('.dice-value-options').forEach(optionGroup => {
+            optionGroup.addEventListener('click', (event) => {
+                const button = event.target.closest('.dice-value-option');
+                if (!button) return;
+
+                optionGroup.querySelectorAll('.dice-value-option').forEach(option => {
+                    option.classList.remove('selected');
+                    option.setAttribute('aria-pressed', 'false');
+                });
+
+                button.classList.add('selected');
+                button.setAttribute('aria-pressed', 'true');
+            });
+        });
 
         DOM.diceControlModal.classList.add('active');
     }

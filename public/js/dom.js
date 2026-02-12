@@ -47,7 +47,7 @@ const DOM = {
     // Dice control
     diceControlModal: document.getElementById('dice-control-modal'),
     diceControlPowerBtn: document.getElementById('dice-control-power-btn'),
-    targetPlayerSelect: document.getElementById('target-player-select'),
+    targetPlayerOptions: document.getElementById('target-player-options'),
     diceValueControls: document.getElementById('dice-value-controls'),
     setControlBtn: document.getElementById('set-control-btn'),
     cancelControlBtn: document.getElementById('cancel-control-btn'),
