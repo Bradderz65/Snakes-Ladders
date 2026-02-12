@@ -328,7 +328,26 @@ const Draw = {
             playerRadius *= 1 + Math.sin(animation.progress * Math.PI) * 0.15;
         }
         
-        const offset = (index - (GameState.gameState.players.length - 1) / 2) * (playerRadius * 1.2);
+        const getDisplayedTile = (p) => {
+            const pAnimation = GameState.playerAnimations[p.persistentId];
+            if (pAnimation && pAnimation.locked) {
+                if (pAnimation.isFollowingSnake && pAnimation.currentBezierPos) {
+                    const row = Math.max(0, Math.min(CONFIG.BOARD_SIZE - 1, Math.floor(pAnimation.currentBezierPos.y / cellSize)));
+                    const col = Math.max(0, Math.min(CONFIG.BOARD_SIZE - 1, Math.floor(pAnimation.currentBezierPos.x / cellSize)));
+                    return Utils.getCellNumber(row, col);
+                }
+                return pAnimation.from + (pAnimation.to - pAnimation.from) * pAnimation.progress;
+            }
+            return p.position;
+        };
+
+        // Only spread tokens when players are on the same displayed tile.
+        const currentTile = Math.round(getDisplayedTile(player));
+        const sameTilePlayers = GameState.gameState.players.filter(p => Math.round(getDisplayedTile(p)) === currentTile && currentTile > 0);
+        const sameTileIndex = Math.max(0, sameTilePlayers.findIndex(p => p.persistentId === player.persistentId));
+        const offset = sameTilePlayers.length > 1
+            ? (sameTileIndex - (sameTilePlayers.length - 1) / 2) * (playerRadius * 1.2)
+            : 0;
         const centerX = pos.x + offset;
         const centerY = pos.y;
 
@@ -345,7 +364,7 @@ const Draw = {
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 5;
         
-        const glowRadius = isAnimating ? playerRadius * 2.2 : playerRadius * 1.5;
+        const glowRadius = isAnimating ? playerRadius * 2.3 : playerRadius * 1.6;
         const glowGradient = ctx.createRadialGradient(
             centerX, centerY, playerRadius * 0.5,
             centerX, centerY, glowRadius
@@ -356,20 +375,47 @@ const Draw = {
         ctx.beginPath();
         ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
         ctx.fill();
-        
+
+        // Outer ring gives each piece a consistent premium edge.
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, playerRadius * 1.08, 0, Math.PI * 2);
+        ctx.fill();
+
         const playerGradient = ctx.createRadialGradient(
-            centerX - playerRadius * 0.3, centerY - playerRadius * 0.3, 0,
-            centerX, centerY, playerRadius
+            centerX - playerRadius * 0.28,
+            centerY - playerRadius * 0.32,
+            playerRadius * 0.08,
+            centerX,
+            centerY,
+            playerRadius
         );
         playerGradient.addColorStop(0, player.color + 'ff');
-        playerGradient.addColorStop(1, player.color + 'cc');
+        playerGradient.addColorStop(0.7, player.color + 'e6');
+        playerGradient.addColorStop(1, player.color + 'b8');
         ctx.fillStyle = playerGradient;
         ctx.beginPath();
-        ctx.arc(centerX, centerY, playerRadius, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, playerRadius * 0.98, 0, Math.PI * 2);
         ctx.fill();
-        
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
+
+        // Gloss highlight to make the token feel less flat.
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.24)';
+        ctx.beginPath();
+        ctx.ellipse(
+            centerX - playerRadius * 0.2,
+            centerY - playerRadius * 0.28,
+            playerRadius * 0.45,
+            playerRadius * 0.28,
+            -0.3,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, playerRadius * 0.96, 0, Math.PI * 2);
         ctx.stroke();
         
         ctx.shadowColor = 'transparent';
@@ -385,11 +431,11 @@ const Draw = {
         ctx.shadowBlur = 4;
 
         if (player.icon) {
-            ctx.font = `${playerRadius * 1.6}px Arial`;
-            ctx.fillText(player.icon, centerX, centerY);
+            ctx.font = `${playerRadius * 1.42}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+            ctx.fillText(player.icon, centerX, centerY + playerRadius * 0.03);
         } else {
-            ctx.font = `bold ${playerRadius * 1.1}px Arial`;
-            ctx.fillText(player.name.charAt(0).toUpperCase(), centerX, centerY);
+            ctx.font = `700 ${playerRadius * 1.08}px "Trebuchet MS", "Segoe UI", sans-serif`;
+            ctx.fillText(player.name.charAt(0).toUpperCase(), centerX, centerY + playerRadius * 0.02);
         }
 
         ctx.shadowColor = 'transparent';

@@ -174,7 +174,7 @@ const UI = {
 
             mobileScoreboardItem.innerHTML = `
                 <div class="mobile-scoreboard-color" style="background-color: ${player.color}">
-                    <span>${player.icon || player.name.charAt(0).toUpperCase()}</span>
+                    <span class="mobile-scoreboard-icon">${player.icon || player.name.charAt(0).toUpperCase()}</span>
                 </div>
                 <div class="mobile-scoreboard-details">
                     <div class="mobile-scoreboard-name">${player.name}</div>
