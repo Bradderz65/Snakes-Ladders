@@ -283,9 +283,15 @@ const Draw = {
             ctx.fillStyle = '#000000';
             ctx.fillRect(x, y, cellSize, cellSize);
 
+            const voidBorderWidth = 2;
             ctx.strokeStyle = '#333333';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x, y, cellSize, cellSize);
+            ctx.lineWidth = voidBorderWidth;
+            ctx.strokeRect(
+                x + voidBorderWidth / 2,
+                y + voidBorderWidth / 2,
+                cellSize - voidBorderWidth,
+                cellSize - voidBorderWidth
+            );
 
             ctx.restore();
         });

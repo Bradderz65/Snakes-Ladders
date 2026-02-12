@@ -50,9 +50,16 @@ const Renderer = {
                     ctx.fillRect(x, y, cellSize, cellSize);
                 }
                 
+                const cellBorderWidth = 1.5;
                 ctx.strokeStyle = '#475569';
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(x, y, cellSize, cellSize);
+                ctx.lineWidth = cellBorderWidth;
+                // Inset border so strokes at board edges are not clipped by canvas bounds.
+                ctx.strokeRect(
+                    x + cellBorderWidth / 2,
+                    y + cellBorderWidth / 2,
+                    cellSize - cellBorderWidth,
+                    cellSize - cellBorderWidth
+                );
                 
                 ctx.fillStyle = num === 100 ? '#f093fb' : '#cbd5e1';
                 ctx.font = `bold ${cellSize * 0.25}px Arial`;
@@ -208,6 +215,7 @@ const Renderer = {
     resizeCanvas() {
         const container = document.querySelector('.board-container');
         if (!container) return;
+        const frame = DOM.canvas ? DOM.canvas.parentElement : null;
         
         const containerWidth = container.clientWidth;
         const containerHeight = container.clientHeight;
@@ -215,10 +223,33 @@ const Renderer = {
             setTimeout(() => this.resizeCanvas(), 50);
             return;
         }
+
+        let frameHorizontal = 0;
+        let frameVertical = 0;
+        if (frame) {
+            const frameStyles = window.getComputedStyle(frame);
+            frameHorizontal =
+                parseFloat(frameStyles.paddingLeft) +
+                parseFloat(frameStyles.paddingRight) +
+                parseFloat(frameStyles.borderLeftWidth) +
+                parseFloat(frameStyles.borderRightWidth);
+            frameVertical =
+                parseFloat(frameStyles.paddingTop) +
+                parseFloat(frameStyles.paddingBottom) +
+                parseFloat(frameStyles.borderTopWidth) +
+                parseFloat(frameStyles.borderBottomWidth);
+        }
         
         const isMobile = window.innerWidth <= 768;
-        const paddingBuffer = isMobile ? 8 : 32;
-        const maxSize = Math.min(containerWidth - paddingBuffer, containerHeight - paddingBuffer, 800);
+        const paddingBuffer = isMobile ? 0 : 16;
+        const maxSize = Math.max(
+            0,
+            Math.min(
+                containerWidth - paddingBuffer - frameHorizontal,
+                containerHeight - paddingBuffer - frameVertical,
+                800
+            )
+        );
         GameState.canvasLogicalSize = maxSize;
         
         const dpr = window.devicePixelRatio || 1;

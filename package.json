@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "dev:live": "nodemon --watch server.js --ext js,json --signal SIGTERM server.js",
+    "launch:dev": "./launch-dev.sh"
   },
   "keywords": ["snakes", "ladders", "multiplayer", "game"],
   "author": "",
@@ -13,5 +15,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.6.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
   }
 }
