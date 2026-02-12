@@ -109,13 +109,18 @@ const Camera = {
     
     updateButtonIcon() {
         const cameraIcon = DOM.mobileCameraBtn.querySelector('.camera-icon');
+        const cameraState = DOM.mobileCameraBtn.querySelector('.camera-state');
         if (cameraIcon) {
             if (this.enabled) {
-                cameraIcon.textContent = '🔍';
-                DOM.mobileCameraBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                cameraIcon.textContent = '🎯';
+                DOM.mobileCameraBtn.classList.add('active');
+                DOM.mobileCameraBtn.setAttribute('aria-label', 'Disable follow camera');
+                if (cameraState) cameraState.textContent = 'On';
             } else {
                 cameraIcon.textContent = '📷';
-                DOM.mobileCameraBtn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+                DOM.mobileCameraBtn.classList.remove('active');
+                DOM.mobileCameraBtn.setAttribute('aria-label', 'Enable follow camera');
+                if (cameraState) cameraState.textContent = 'Off';
             }
         }
     }

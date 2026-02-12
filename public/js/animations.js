@@ -72,11 +72,11 @@ const Animations = {
         animate();
     },
     
-    animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadder, snake, ladder, onComplete) {
+    animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadder, snake, ladder, movementSound, onComplete) {
         const animationStartTime = performance.now();
         GameState.animationInProgress = true;
 
-        const movementSound = AudioSystem.selectRandom('playerMove', 'playerMove2', 0.7);
+        const selectedMovementSound = movementSound || AudioSystem.selectRandom('playerMove', 'playerMove2', 0.7);
         let lastSoundTime = 0;
         const soundInterval = CONFIG.ANIMATION.SOUND_INTERVAL;
 
@@ -162,14 +162,14 @@ const Animations = {
             const now = Date.now();
             if (now - lastSoundTime >= soundInterval) {
                 try {
-                    AudioSystem.play(movementSound);
+                    AudioSystem.play(selectedMovementSound);
                     lastSoundTime = now;
                 } catch (error) {
                     console.warn('Sound playback failed during movement:', error);
                 }
             } else if (stepIndex === 0 || stepIndex === steps.length - 1) {
                 try {
-                    AudioSystem.play(movementSound, 0.7);
+                    AudioSystem.play(selectedMovementSound, 0.7);
                 } catch (error) {
                     console.warn('Fallback sound failed:', error);
                 }

@@ -84,5 +84,20 @@ const AudioSystem = {
     
     selectRandom(baseSound, altSound, baseProbability = 0.7) {
         return Math.random() < baseProbability ? baseSound : altSound;
+    },
+
+    selectBySeed(baseSound, altSound, seed, baseProbability = 0.7) {
+        if (seed === undefined || seed === null) {
+            return this.selectRandom(baseSound, altSound, baseProbability);
+        }
+
+        const seedString = String(seed);
+        let hash = 0;
+        for (let i = 0; i < seedString.length; i++) {
+            hash = ((hash << 5) - hash + seedString.charCodeAt(i)) | 0;
+        }
+
+        const normalized = (Math.abs(hash) % 1000) / 1000;
+        return normalized < baseProbability ? baseSound : altSound;
     }
 };

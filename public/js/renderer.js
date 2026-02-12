@@ -89,9 +89,20 @@ const Renderer = {
             
             const playerTiles = GameState.gameState.players.map(player => {
                 const animation = GameState.playerAnimations[player.persistentId];
-                if (animation && animation.locked && !animation.isFollowingSnake) {
+                if (animation && animation.locked) {
+                    if (animation.isFollowingSnake && animation.currentBezierPos) {
+                        const curveRow = Math.max(0, Math.min(boardSize - 1, Math.floor(animation.currentBezierPos.y / cellSize)));
+                        const curveCol = Math.max(0, Math.min(boardSize - 1, Math.floor(animation.currentBezierPos.x / cellSize)));
+                        const approxTile = Math.round(Utils.getCellNumber(
+                            curveRow,
+                            curveCol
+                        ));
+                        return Number.isFinite(approxTile) ? approxTile : player.position;
+                    }
+
                     return animation.from + (animation.to - animation.from) * animation.progress;
                 }
+
                 return player.position;
             });
             
@@ -102,10 +113,10 @@ const Renderer = {
                     if (distance < minDistance) minDistance = distance;
                 }
                 
-                if (minDistance <= fullVisibilityDistance) return 1.0;
+                if (minDistance <= fullVisibilityDistance || fadeRange <= 0) return 1.0;
                 if (minDistance <= fadeStartDistance) {
                     const fadeProgress = (fadeStartDistance - minDistance) / fadeRange;
-                    return distantOpacity + (0.8 * fadeProgress);
+                    return distantOpacity + ((1 - distantOpacity) * fadeProgress);
                 }
                 return distantOpacity;
             };

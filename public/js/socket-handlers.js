@@ -232,6 +232,16 @@ const SocketHandlers = {
             const oldPosition = result.oldPosition;
             const newPosition = result.newPosition;
             const hasSnakeOrLadder = result.snake || result.ladder;
+            const movementSoundSeed = [
+                rollingPlayer.persistentId,
+                oldPosition,
+                newPosition,
+                result.diceRoll,
+                result.enteredBoard ? 'entered' : 'normal',
+                result.snake ? `${result.snake.from}-${result.snake.to}` : 'nosnake',
+                result.ladder ? `${result.ladder.from}-${result.ladder.to}` : 'noladder'
+            ].join('|');
+            const movementSound = AudioSystem.selectBySeed('playerMove', 'playerMove2', movementSoundSeed, 0.7);
 
             const effectiveDiceRoll = result.enteredBoard ? 1 : result.diceRoll;
 
@@ -262,6 +272,7 @@ const SocketHandlers = {
                 hasSnakeOrLadder,
                 result.snake,
                 result.ladder,
+                movementSound,
                 () => {
                     delete GameState.playerAnimations[rollingPlayer.persistentId];
                     GameState.diceAnimationInProgress = false;
