@@ -940,6 +940,17 @@ input[type="text"]::placeholder {
     border: 2px solid var(--border-color);
 }
 
+.btn-explosion {
+    background: linear-gradient(135deg, #f59e0b 0%, #dc2626 100%);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 6px 18px rgba(220, 38, 38, 0.35);
+}
+
+.btn-explosion:hover {
+    box-shadow: 0 10px 24px rgba(220, 38, 38, 0.45);
+}
+
 .btn-disconnect {
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     color: white;

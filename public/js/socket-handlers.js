@@ -145,6 +145,20 @@ const SocketHandlers = {
             GameState.gameState.tempVoids.push(data.position);
         });
 
+        socket.on('test-explosion-triggered', ({ position, triggeredBy }) => {
+            AudioSystem.play('mineExplosion');
+            Explosions.create(position);
+
+            if (!GameState.gameState.tempVoids) {
+                GameState.gameState.tempVoids = [];
+            }
+            if (!GameState.gameState.tempVoids.includes(position)) {
+                GameState.gameState.tempVoids.push(position);
+            }
+
+            UI.showNotification(`💥 Test explosion by ${triggeredBy} on tile ${position}`, 'warning');
+        });
+
         socket.on('games-discovered', (data) => {
             GameState.lastDiscoveryTime = Date.now();
             const serverKey = `${data.serverIP}:${data.serverPort}`;

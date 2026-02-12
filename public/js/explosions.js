@@ -43,9 +43,61 @@ class ExplosionParticle {
     }
 }
 
+class TileFragment {
+    constructor(x, y, size, centerX, centerY) {
+        this.x = x;
+        this.y = y;
+        this.size = size;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotationSpeed = (Math.random() - 0.5) * 0.25;
+
+        const dirX = x - centerX;
+        const dirY = y - centerY;
+        const magnitude = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+        const normX = dirX / magnitude;
+        const normY = dirY / magnitude;
+
+        const speed = Math.random() * 4 + 3;
+        this.vx = normX * speed + (Math.random() - 0.5) * 1.5;
+        this.vy = normY * speed - (Math.random() * 1.5 + 0.5);
+
+        this.life = 1.0;
+        this.decay = Math.random() * 0.03 + 0.02;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.22;
+        this.vx *= 0.98;
+        this.rotation += this.rotationSpeed;
+        this.life -= this.decay;
+    }
+
+    draw(ctx) {
+        if (this.life <= 0) return;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.globalAlpha = this.life;
+
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.75)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-this.size / 2, -this.size / 2, this.size, this.size);
+
+        ctx.restore();
+    }
+}
+
 const Explosions = {
     create(position) {
         const pos = Utils.getPosition(position);
+        const cellSize = GameState.canvasLogicalSize / CONFIG.BOARD_SIZE;
+
         const explosion = {
             x: pos.x,
             y: pos.y,
@@ -53,17 +105,31 @@ const Explosions = {
             startTime: Date.now(),
             duration: 1500,
             particles: [],
-            holeFadeIn: 0
+            fragments: []
         };
 
         for (let i = 0; i < 25; i++) {
             explosion.particles.push(new ExplosionParticle(pos.x, pos.y));
         }
 
+        // Break tile into chunks that fly away instead of fading into a hole.
+        const fragmentGrid = 4;
+        const fragmentSize = cellSize / fragmentGrid;
+        const originX = pos.x - cellSize / 2;
+        const originY = pos.y - cellSize / 2;
+
+        for (let row = 0; row < fragmentGrid; row++) {
+            for (let col = 0; col < fragmentGrid; col++) {
+                const fx = originX + (col + 0.5) * fragmentSize;
+                const fy = originY + (row + 0.5) * fragmentSize;
+                explosion.fragments.push(new TileFragment(fx, fy, fragmentSize * 0.9, pos.x, pos.y));
+            }
+        }
+
         GameState.explosionAnimations.push(explosion);
         Renderer.startRenderLoop();
     },
-    
+
     draw() {
         const cellSize = GameState.canvasLogicalSize / CONFIG.BOARD_SIZE;
         const currentTime = Date.now();
@@ -84,8 +150,6 @@ const Explosions = {
                 return false;
             }
 
-            explosion.holeFadeIn = Math.max(0, Math.min((progress - 0.3) / 0.4, 1));
-
             ctx.save();
 
             const phase1 = 0.15;
@@ -96,6 +160,15 @@ const Explosions = {
                 particle.update();
                 if (particle.life > 0) {
                     particle.draw(ctx);
+                    return true;
+                }
+                return false;
+            });
+
+            explosion.fragments = explosion.fragments.filter(fragment => {
+                fragment.update();
+                if (fragment.life > 0) {
+                    fragment.draw(ctx);
                     return true;
                 }
                 return false;
@@ -115,77 +188,71 @@ const Explosions = {
                 const flashAlpha = 1 - flashProgress * 0.3;
 
                 const flashGradient = ctx.createRadialGradient(
-                    explosion.x, explosion.y, 0,
-                    explosion.x, explosion.y, flashRadius
+                    explosion.x,
+                    explosion.y,
+                    0,
+                    explosion.x,
+                    explosion.y,
+                    flashRadius
                 );
                 flashGradient.addColorStop(0, `rgba(255, 255, 255, ${flashAlpha})`);
                 flashGradient.addColorStop(0.3, `rgba(255, 255, 200, ${flashAlpha * 0.9})`);
                 flashGradient.addColorStop(0.6, `rgba(255, 200, 100, ${flashAlpha * 0.7})`);
-                flashGradient.addColorStop(1, `rgba(255, 100, 0, 0)`);
+                flashGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
 
                 ctx.fillStyle = flashGradient;
                 ctx.beginPath();
                 ctx.arc(explosion.x, explosion.y, flashRadius, 0, Math.PI * 2);
                 ctx.fill();
-
             } else if (progress < phase2) {
                 const ringProgress = (progress - phase1) / (phase2 - phase1);
                 const ringRadius = cellSize * 0.6 * (1 + ringProgress * 1.5);
                 const ringAlpha = (1 - ringProgress) * 0.8;
 
                 const ringGradient = ctx.createRadialGradient(
-                    explosion.x, explosion.y, ringRadius * 0.3,
-                    explosion.x, explosion.y, ringRadius
+                    explosion.x,
+                    explosion.y,
+                    ringRadius * 0.3,
+                    explosion.x,
+                    explosion.y,
+                    ringRadius
                 );
                 ringGradient.addColorStop(0, `rgba(255, 255, 255, ${ringAlpha * 0.3})`);
                 ringGradient.addColorStop(0.4, `rgba(255, 200, 0, ${ringAlpha * 0.8})`);
                 ringGradient.addColorStop(0.7, `rgba(255, 69, 0, ${ringAlpha * 0.6})`);
-                ringGradient.addColorStop(1, `rgba(139, 0, 0, 0)`);
+                ringGradient.addColorStop(1, 'rgba(139, 0, 0, 0)');
 
                 ctx.fillStyle = ringGradient;
                 ctx.beginPath();
                 ctx.arc(explosion.x, explosion.y, ringRadius, 0, Math.PI * 2);
                 ctx.fill();
-
             } else {
                 const smokeProgress = (progress - phase2) / (phase3 - phase2);
                 const smokeRadius = cellSize * 0.8;
                 const smokeAlpha = (1 - smokeProgress) * 0.6;
 
                 const smokeGradient = ctx.createRadialGradient(
-                    explosion.x, explosion.y, cellSize * 0.2 * (1 - explosion.holeFadeIn * 0.5),
-                    explosion.x, explosion.y, smokeRadius
+                    explosion.x,
+                    explosion.y,
+                    cellSize * 0.12,
+                    explosion.x,
+                    explosion.y,
+                    smokeRadius
                 );
-                smokeGradient.addColorStop(0, `rgba(20, 20, 20, ${smokeAlpha * (1 - explosion.holeFadeIn)})`);
-                smokeGradient.addColorStop(0.5, `rgba(40, 40, 40, ${smokeAlpha * (1 - explosion.holeFadeIn * 0.5)})`);
-                smokeGradient.addColorStop(1, `rgba(60, 60, 60, 0)`);
+                smokeGradient.addColorStop(0, `rgba(20, 20, 20, ${smokeAlpha})`);
+                smokeGradient.addColorStop(0.5, `rgba(40, 40, 40, ${smokeAlpha * 0.7})`);
+                smokeGradient.addColorStop(1, 'rgba(60, 60, 60, 0)');
 
                 ctx.fillStyle = smokeGradient;
                 ctx.beginPath();
                 ctx.arc(explosion.x, explosion.y, smokeRadius, 0, Math.PI * 2);
                 ctx.fill();
-
-                if (explosion.holeFadeIn > 0) {
-                    const holeRadius = cellSize * 0.35 * explosion.holeFadeIn;
-                    const holeGradient = ctx.createRadialGradient(
-                        explosion.x, explosion.y, 0,
-                        explosion.x, explosion.y, holeRadius
-                    );
-                    holeGradient.addColorStop(0, `rgba(0, 0, 0, ${explosion.holeFadeIn})`);
-                    holeGradient.addColorStop(0.5, `rgba(10, 10, 10, ${explosion.holeFadeIn * 0.8})`);
-                    holeGradient.addColorStop(1, `rgba(30, 30, 30, ${explosion.holeFadeIn * 0.5})`);
-
-                    ctx.fillStyle = holeGradient;
-                    ctx.beginPath();
-                    ctx.arc(explosion.x, explosion.y, holeRadius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
             }
 
             ctx.restore();
             return true;
         });
-        
+
         if (hadExplosions && GameState.explosionAnimations.length === 0) {
             if (!Renderer.hasActiveAnimations()) {
                 Renderer.stopRenderLoop();

@@ -281,6 +281,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    DOM.testExplosionBtn.addEventListener('click', () => {
+        if (!GameState.currentRoom) return;
+        GameState.socket.emit('trigger-test-explosion', { roomId: GameState.currentRoom });
+    });
+
     // Dice control
     DOM.diceControlPowerBtn.addEventListener('click', () => {
         UI.openDiceControlModal();
@@ -386,6 +391,14 @@ document.addEventListener('DOMContentLoaded', () => {
             GameState.isMobileMenuOpen = false;
             document.removeEventListener('click', closeMobileMenu);
         }
+    });
+
+    DOM.mobileTestExplosionBtn.addEventListener('click', () => {
+        if (!GameState.currentRoom) return;
+        GameState.socket.emit('trigger-test-explosion', { roomId: GameState.currentRoom });
+        DOM.mobileSettingsMenu.classList.remove('open');
+        GameState.isMobileMenuOpen = false;
+        document.removeEventListener('click', closeMobileMenu);
     });
 
     DOM.mobileLeaveBtn.addEventListener('click', () => {

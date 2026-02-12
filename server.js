@@ -1061,6 +1061,37 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('game-state', game.getState());
     });
 
+    socket.on('trigger-test-explosion', ({ roomId, position = null }) => {
+        const game = games.get(roomId);
+        if (!game) return;
+
+        const player = game.players.find(p => p.id === socket.id);
+        if (!player) return;
+
+        let targetPosition = null;
+
+        if (Number.isInteger(position) && position >= 2 && position <= 99 && !game.voids.includes(position)) {
+            targetPosition = position;
+        } else if (game.mines.length > 0) {
+            targetPosition = game.mines[Math.floor(Math.random() * game.mines.length)];
+        } else {
+            const candidates = [];
+            for (let tile = 2; tile <= 99; tile++) {
+                if (!game.voids.includes(tile)) {
+                    candidates.push(tile);
+                }
+            }
+
+            if (candidates.length === 0) return;
+            targetPosition = candidates[Math.floor(Math.random() * candidates.length)];
+        }
+
+        io.to(roomId).emit('test-explosion-triggered', {
+            position: targetPosition,
+            triggeredBy: player.name
+        });
+    });
+
     socket.on('ladder-animation-complete', ({ roomId, playerId, ladderEnd }) => {
         const game = games.get(roomId);
         if (!game) return;
