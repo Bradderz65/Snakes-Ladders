@@ -133,16 +133,6 @@ class Game {
     }
 
     generateRandomSnakesAndLadders() {
-        // Clear existing custom snakes and ladders
-        this.snakes = {};
-        this.ladders = {};
-
-        // Generate counts similar to base game (8-10 snakes, 7-9 ladders)
-        const targetSnakeCount = Math.floor(Math.random() * 3) + 8; // 8-10 snakes
-        const targetLadderCount = Math.floor(Math.random() * 3) + 7; // 7-9 ladders
-
-        console.log(`🎲 Generating natural Snakes & Ladders - Target: ${targetSnakeCount} snakes, ${targetLadderCount} ladders`);
-
         // Generate snake lengths naturally varied like the base game
         // Base game has: 3, 4, 10, 20, 20, 20, 21, 38, 43, 63
         // Mix of very short, short, medium, and occasionally very long
@@ -166,85 +156,102 @@ class Game {
             return Math.floor(Math.random() * 12) + 8;                    // 50%: short climb (8-19)
         };
 
-        // Helper to check if position is occupied
-        const isOccupied = (pos) => {
-            if (pos === 1 || pos === 100) return true; // Start and end always reserved
-            if (this.snakes[pos] !== undefined) return true; // Snake head here
-            if (Object.values(this.snakes).includes(pos)) return true; // Snake tail here
-            if (this.ladders[pos] !== undefined) return true; // Ladder bottom here
-            if (Object.values(this.ladders).includes(pos)) return true; // Ladder top here
-            return false;
-        };
-
-        // Generate snakes - place them naturally across the board
-        let snakeAttempts = 0;
+        // Multiple generation attempts to avoid sparse/failed random boards.
+        const GENERATION_RETRIES = 8;
         const MAX_ATTEMPTS = 5000;
+        const MIN_SNAKES = 7;
+        const MIN_LADDERS = 6;
 
-        while (Object.keys(this.snakes).length < targetSnakeCount && snakeAttempts < MAX_ATTEMPTS) {
-            snakeAttempts++;
+        for (let attempt = 1; attempt <= GENERATION_RETRIES; attempt++) {
+            const snakes = {};
+            const ladders = {};
+            const occupied = new Set([1, 100]);
 
-            // Snake heads can be anywhere from position 10 to 99
-            const head = Math.floor(Math.random() * 90) + 10;
-            
-            if (isOccupied(head)) continue;
+            const targetSnakeCount = Math.floor(Math.random() * 3) + 8; // 8-10 snakes
+            const targetLadderCount = Math.floor(Math.random() * 3) + 7; // 7-9 ladders
 
-            const length = generateSnakeLength();
-            const tail = head - length;
+            console.log(`🎲 Generating natural Snakes & Ladders (attempt ${attempt}/${GENERATION_RETRIES}) - Target: ${targetSnakeCount} snakes, ${targetLadderCount} ladders`);
 
-            // Validate: tail must be >= 2 and not occupied
-            if (tail >= 2 && !isOccupied(tail)) {
-                // Extra check: don't place snake head on a ladder top
-                const isLadderTop = Object.values(this.ladders).includes(head);
-                if (!isLadderTop) {
-                    this.snakes[head] = tail;
+            // Generate snakes - place them naturally across the board
+            let snakeAttempts = 0;
+            while (Object.keys(snakes).length < targetSnakeCount && snakeAttempts < MAX_ATTEMPTS) {
+                snakeAttempts++;
+
+                // Snake heads can be anywhere from position 10 to 99
+                const head = Math.floor(Math.random() * 90) + 10;
+                if (occupied.has(head)) continue;
+
+                const length = generateSnakeLength();
+                const tail = head - length;
+
+                // Validate: tail must be >= 2 and not occupied
+                if (tail >= 2 && !occupied.has(tail)) {
+                    snakes[head] = tail;
+                    occupied.add(head);
+                    occupied.add(tail);
                 }
             }
-        }
 
-        // Generate ladders - place them naturally across the board
-        let ladderAttempts = 0;
+            // Generate ladders - place them naturally across the board
+            let ladderAttempts = 0;
+            while (Object.keys(ladders).length < targetLadderCount && ladderAttempts < MAX_ATTEMPTS) {
+                ladderAttempts++;
 
-        while (Object.keys(this.ladders).length < targetLadderCount && ladderAttempts < MAX_ATTEMPTS) {
-            ladderAttempts++;
+                // Ladder bottoms can be anywhere from position 2 to 85
+                const bottom = Math.floor(Math.random() * 84) + 2;
+                if (occupied.has(bottom)) continue;
 
-            // Ladder bottoms can be anywhere from position 2 to 85
-            const bottom = Math.floor(Math.random() * 84) + 2;
-            
-            if (isOccupied(bottom)) continue;
+                const length = generateLadderLength();
+                const top = bottom + length;
 
-            const length = generateLadderLength();
-            const top = bottom + length;
-
-            // Validate: top must be <= 99 and not occupied
-            if (top <= 99 && !isOccupied(top)) {
-                this.ladders[bottom] = top;
+                // Validate: top must be <= 99 and not occupied
+                if (top <= 99 && !occupied.has(top)) {
+                    ladders[bottom] = top;
+                    occupied.add(bottom);
+                    occupied.add(top);
+                }
             }
+
+            const snakeCount = Object.keys(snakes).length;
+            const ladderCount = Object.keys(ladders).length;
+
+            // Accept only sufficiently populated boards.
+            if (snakeCount >= MIN_SNAKES && ladderCount >= MIN_LADDERS) {
+                this.snakes = snakes;
+                this.ladders = ladders;
+
+                const snakeLengths = Object.entries(this.snakes).map(([head, tail]) =>
+                    parseInt(head) - parseInt(tail)
+                ).sort((a, b) => b - a);
+                const ladderLengths = Object.entries(this.ladders).map(([bottom, top]) =>
+                    parseInt(top) - parseInt(bottom)
+                ).sort((a, b) => b - a);
+
+                console.log(`✅ Generated ${snakeCount} snakes and ${ladderCount} ladders`);
+                console.log(`🐍 Snake lengths: [${snakeLengths.join(', ')}]`);
+                console.log(`🪜 Ladder lengths: [${ladderLengths.join(', ')}]`);
+                console.log('📋 Snakes:', this.snakes);
+                console.log('📋 Ladders:', this.ladders);
+                return;
+            }
+
+            console.log(`⚠️ Random board underfilled on attempt ${attempt}: ${snakeCount} snakes, ${ladderCount} ladders`);
         }
 
-        // Calculate statistics for logging
-        const snakeLengths = Object.entries(this.snakes).map(([head, tail]) => 
-            parseInt(head) - parseInt(tail)
-        ).sort((a, b) => b - a);
-        
-        const ladderLengths = Object.entries(this.ladders).map(([bottom, top]) => 
-            parseInt(top) - parseInt(bottom)
-        ).sort((a, b) => b - a);
-
-        console.log(`✅ Generated ${Object.keys(this.snakes).length} snakes and ${Object.keys(this.ladders).length} ladders`);
-        console.log(`🐍 Snake lengths: [${snakeLengths.join(', ')}]`);
-        console.log(`🪜 Ladder lengths: [${ladderLengths.join(', ')}]`);
-        console.log('📋 Snakes:', this.snakes);
-        console.log('📋 Ladders:', this.ladders);
+        // Safe fallback: use default board if all random attempts fail.
+        this.snakes = null;
+        this.ladders = null;
+        console.log('⚠️ Falling back to default snakes/ladders after repeated random generation failures');
     }
 
     // Helper method to get snakes (custom or default)
     getSnakes() {
-        return this.randomizeSnakesLadders && this.snakes ? this.snakes : SNAKES;
+        return this.randomizeSnakesLadders && this.snakes && Object.keys(this.snakes).length > 0 ? this.snakes : SNAKES;
     }
 
     // Helper method to get ladders (custom or default)
     getLadders() {
-        return this.randomizeSnakesLadders && this.ladders ? this.ladders : LADDERS;
+        return this.randomizeSnakesLadders && this.ladders && Object.keys(this.ladders).length > 0 ? this.ladders : LADDERS;
     }
 
     addPlayer(playerId, playerName, persistentId = null, playerColor = null, playerIcon = null) {
@@ -283,6 +290,15 @@ class Game {
 
         this.players.push(player);
         return { success: true, player };
+    }
+
+    maybeGrantRevengePower(player) {
+        if (!player) return false;
+        if (player.snakeHits >= this.snakeThreshold && !player.hasDiceControl && !player.hasUsedPower) {
+            player.hasDiceControl = true;
+            return true;
+        }
+        return false;
     }
 
     generatePlayerId() {
@@ -542,13 +558,7 @@ class Game {
 
             // Increment snake hit counter
             player.snakeHits++;
-
-            // Grant dice control power if player has hit the threshold number of snakes
-            // and doesn't already have it, and hasn't used it yet this game
-            if (player.snakeHits >= this.snakeThreshold && !player.hasDiceControl && !player.hasUsedPower) {
-                player.hasDiceControl = true;
-                powerGranted = true;
-            }
+            powerGranted = this.maybeGrantRevengePower(player);
         }
         // Check for ladder (only if didn't hit mine/void/snake)
         else if (this.getLadders()[newPosition]) {
@@ -578,13 +588,7 @@ class Game {
 
                 // Increment snake hit counter
                 player.snakeHits++;
-
-                // Grant dice control power if player has hit the threshold number of snakes
-                // and doesn't already have it, and hasn't used it yet this game
-                if (player.snakeHits >= this.snakeThreshold && !player.hasDiceControl && !player.hasUsedPower) {
-                    player.hasDiceControl = true;
-                    powerGranted = true;
-                }
+                powerGranted = this.maybeGrantRevengePower(player);
 
                 // Clear ladder since snake takes precedence
                 ladder = null;
@@ -632,11 +636,27 @@ class Game {
     }
 
     getState() {
+        const sanitizedPlayers = this.players.map(player => ({
+            id: player.id,
+            persistentId: player.persistentId,
+            name: player.name,
+            position: player.position,
+            color: player.color,
+            icon: player.icon,
+            ready: player.ready,
+            snakeHits: player.snakeHits,
+            hasDiceControl: player.hasDiceControl,
+            hasUsedPower: player.hasUsedPower
+        }));
+        const sanitizedWinner = this.winner
+            ? sanitizedPlayers.find(p => p.persistentId === this.winner.persistentId) || null
+            : null;
+
         return {
-            players: this.players,
+            players: sanitizedPlayers,
             currentTurn: this.currentTurn,
             started: this.started,
-            winner: this.winner,
+            winner: sanitizedWinner,
             lastRoll: this.lastRoll,
             snakes: this.getSnakes(),
             ladders: this.getLadders(),
@@ -919,8 +939,11 @@ io.on('connection', (socket) => {
         game.winner = null;
         game.lastRoll = null;
         
-        // Reset mines and voids
+        // Reset board hazards/state
         game.voids = [];
+        if (game.randomizeSnakesLadders) {
+            game.generateRandomSnakesAndLadders();
+        }
         if (game.minesEnabled) {
             game.generateMines();
         }
@@ -955,6 +978,23 @@ io.on('connection', (socket) => {
         const targetPlayer = game.players.find(p => p.persistentId === targetPlayerId);
         if (!targetPlayer) {
             socket.emit('error', { message: 'Target player not found' });
+            return;
+        }
+
+        // Revenge power should target another player.
+        if (targetPlayer.persistentId === controllerPlayer.persistentId) {
+            socket.emit('error', { message: 'You cannot target yourself with revenge power' });
+            return;
+        }
+
+        // Only one pending controlled roll per target to avoid ambiguous resolution.
+        const existingController = game.players.find(p =>
+            p.controlledDiceRoll &&
+            p.controlledDiceRoll.targetPlayerId === targetPlayerId &&
+            p.persistentId !== controllerPlayer.persistentId
+        );
+        if (existingController) {
+            socket.emit('error', { message: `${targetPlayer.name} already has a pending controlled roll` });
             return;
         }
 

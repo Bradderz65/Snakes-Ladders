@@ -951,6 +951,11 @@ input[type="text"]::placeholder {
     box-shadow: 0 10px 24px rgba(220, 38, 38, 0.45);
 }
 
+#test-explosion-btn,
+#mobile-test-explosion-btn {
+    display: none !important;
+}
+
 .btn-disconnect {
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     color: white;
