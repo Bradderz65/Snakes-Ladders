@@ -331,19 +331,33 @@ const Draw = {
         const getDisplayedTile = (p) => {
             const pAnimation = GameState.playerAnimations[p.persistentId];
             if (pAnimation && pAnimation.locked) {
+                // When animating, derive the tile from the *actual drawn position*.
+                // Using a fractional tile number + Math.round() causes false "same tile" matches
+                // while a piece is merely passing by another tile.
+                let drawPos;
+
                 if (pAnimation.isFollowingSnake && pAnimation.currentBezierPos) {
-                    const row = Math.max(0, Math.min(CONFIG.BOARD_SIZE - 1, Math.floor(pAnimation.currentBezierPos.y / cellSize)));
-                    const col = Math.max(0, Math.min(CONFIG.BOARD_SIZE - 1, Math.floor(pAnimation.currentBezierPos.x / cellSize)));
-                    return Utils.getCellNumber(row, col);
+                    drawPos = pAnimation.currentBezierPos;
+                } else {
+                    const fromPos = Utils.getPosition(pAnimation.from);
+                    const toPos = Utils.getPosition(pAnimation.to);
+                    drawPos = {
+                        x: fromPos.x + (toPos.x - fromPos.x) * pAnimation.progress,
+                        y: fromPos.y + (toPos.y - fromPos.y) * pAnimation.progress
+                    };
                 }
-                return pAnimation.from + (pAnimation.to - pAnimation.from) * pAnimation.progress;
+
+                const row = Math.max(0, Math.min(CONFIG.BOARD_SIZE - 1, Math.floor(drawPos.y / cellSize)));
+                const col = Math.max(0, Math.min(CONFIG.BOARD_SIZE - 1, Math.floor(drawPos.x / cellSize)));
+                return Utils.getCellNumber(row, col);
             }
+
             return p.position;
         };
 
         // Only spread tokens when players are on the same displayed tile.
-        const currentTile = Math.round(getDisplayedTile(player));
-        const sameTilePlayers = GameState.gameState.players.filter(p => Math.round(getDisplayedTile(p)) === currentTile && currentTile > 0);
+        const currentTile = getDisplayedTile(player);
+        const sameTilePlayers = GameState.gameState.players.filter(p => getDisplayedTile(p) === currentTile && currentTile > 0);
         const sameTileIndex = Math.max(0, sameTilePlayers.findIndex(p => p.persistentId === player.persistentId));
         const offset = sameTilePlayers.length > 1
             ? (sameTileIndex - (sameTilePlayers.length - 1) / 2) * (playerRadius * 1.2)
