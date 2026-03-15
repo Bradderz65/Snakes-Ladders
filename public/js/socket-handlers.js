@@ -6,6 +6,8 @@ const SocketHandlers = {
         socket.on('room-created', ({ roomId, player, discoverable }) => {
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             DOM.roomCodeDisplay.textContent = roomId;
             GameState.saveSession();
             UI.switchScreen('lobby');
@@ -20,6 +22,8 @@ const SocketHandlers = {
         socket.on('room-joined', ({ roomId, player }) => {
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             DOM.roomCodeDisplay.textContent = roomId;
             GameState.saveSession();
             UI.switchScreen('lobby');
@@ -29,6 +33,8 @@ const SocketHandlers = {
         socket.on('reconnected', ({ roomId, player }) => {
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             DOM.roomCodeDisplay.textContent = roomId;
             GameState.isReconnecting = false;
             GameState.saveSession();
@@ -52,6 +58,9 @@ const SocketHandlers = {
             GameState.currentRoom = null;
             GameState.currentPlayer = null;
             GameState.gameState = null;
+            GameState.animationInProgress = false;
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             Renderer.stopRenderLoop();
             Camera.enabled = false;
             Camera.reset();
@@ -103,6 +112,10 @@ const SocketHandlers = {
         socket.on('game-started', () => {
             GameState.totalRolls = 0;
             GameState.playerRollCounts = {};
+            GameState.animationInProgress = false;
+            GameState.diceAnimationInProgress = false;
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             UI.switchScreen('game');
             UI.showNotification('Game started!', 'success');
         });
@@ -115,6 +128,9 @@ const SocketHandlers = {
             DOM.winnerModal.classList.remove('active');
             GameState.totalRolls = 0;
             GameState.playerRollCounts = {};
+            GameState.animationInProgress = false;
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             GameState.diceAnimationInProgress = false;
             GameState.explosionAnimations = [];
             UI.switchScreen('lobby');
@@ -126,6 +142,8 @@ const SocketHandlers = {
         });
 
         socket.on('error', ({ message }) => {
+            GameState.turnResolutionInProgress = false;
+            GameState.pendingTurnAnimationCompletion = null;
             if (GameState.isReconnecting) {
                 GameState.clearSession();
                 GameState.isReconnecting = false;
@@ -137,6 +155,12 @@ const SocketHandlers = {
         socket.on('ladder-mine-explosion', (data) => {
             AudioSystem.play('mineExplosion');
             Explosions.create(data.position);
+            if (
+                GameState.pendingTurnAnimationCompletion &&
+                GameState.pendingTurnAnimationCompletion.playerId === data.playerId
+            ) {
+                GameState.pendingTurnAnimationCompletion.waitForExplosionPosition = data.position;
+            }
             UI.showNotification(`💣💥 MINE EXPLOSION! Tile ${data.position} destroyed! Fall to tile 1!`, 'error');
 
             if (!GameState.gameState.tempVoids) {
@@ -209,6 +233,8 @@ const SocketHandlers = {
     },
     
     handleDiceRoll(result) {
+        GameState.turnResolutionInProgress = true;
+        GameState.pendingTurnAnimationCompletion = null;
         GameState.totalRolls++;
         if (result.player) {
             if (!GameState.playerRollCounts[result.player.persistentId]) {
@@ -242,6 +268,10 @@ const SocketHandlers = {
         
         GameState.diceAnimationInProgress = true;
         const diceToShow = result.diceRolls || result.diceRoll;
+        const isLocalRollingPlayer =
+            GameState.currentPlayer &&
+            rollingPlayer.persistentId === GameState.currentPlayer.persistentId;
+
         Animations.animateDiceRoll(diceToShow, () => {
             const oldPosition = result.oldPosition;
             const newPosition = result.newPosition;
@@ -271,6 +301,10 @@ const SocketHandlers = {
                 DOM.lastRollDisplay.textContent = `🎲 Rolled: ${result.diceRoll}`;
                 
                 UI.showNotification(`🎯 ${rollingPlayer.name} needs to roll a 6 to enter the board!`, 'info');
+                this.completeTurnAnimationIfNeeded({
+                    roomId: GameState.currentRoom,
+                    playerId: rollingPlayer.persistentId
+                });
                 
                 setTimeout(() => {
                     UI.updateGameScreen();
@@ -360,11 +394,39 @@ const SocketHandlers = {
                         }, 500);
                     }
 
+                    this.completeTurnAnimationIfNeeded({
+                        roomId: GameState.currentRoom,
+                        playerId: rollingPlayer.persistentId,
+                        waitForExplosionPosition: result.mine ? result.mine.position : null
+                    });
+
                     setTimeout(() => {
                         UI.updateGameScreen();
                     }, 100);
                 }
             );
+        }, {
+            playerName: isLocalRollingPlayer ? '' : rollingPlayer.name
+        });
+    },
+
+    completeTurnAnimationIfNeeded({ roomId, playerId, waitForExplosionPosition = null }) {
+        if (!roomId || !playerId) return;
+
+        if (waitForExplosionPosition) {
+            GameState.pendingTurnAnimationCompletion = {
+                roomId,
+                playerId,
+                waitForExplosionPosition
+            };
+            return;
+        }
+
+        GameState.pendingTurnAnimationCompletion = null;
+        GameState.turnResolutionInProgress = false;
+        GameState.socket.emit('turn-animation-complete', {
+            roomId,
+            playerId
         });
     }
 };

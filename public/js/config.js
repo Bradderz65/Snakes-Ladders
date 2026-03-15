@@ -16,13 +16,14 @@ const CONFIG = {
     ANIMATION: {
         DICE_FRAMES: 14,
         DICE_FRAME_DELAY: 70,
-        DICE_RESULT_HOLD: 700,
+        DICE_RESULT_HOLD: 1000,
         STEP_DURATION_BASE: 300,
         STEP_DURATION_REDUCTION: 8,
         SOUND_INTERVAL: 180,
         SNAKE_DURATION: 1050,
         LADDER_DURATION: 750,
-        TRANSITION_DELAY: 200
+        TRANSITION_DELAY: 200,
+        SLOW_WARNING_BUFFER: 250
     },
     
     // Performance settings

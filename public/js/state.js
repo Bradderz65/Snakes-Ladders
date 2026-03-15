@@ -9,6 +9,8 @@ const GameState = {
     
     // Animation state
     animationInProgress: false,
+    turnResolutionInProgress: false,
+    pendingTurnAnimationCompletion: null,
     playerAnimations: {},
     diceAnimationInProgress: false,
     explosionAnimations: [],

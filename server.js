@@ -60,6 +60,7 @@ class Game {
         this.started = false;
         this.winner = null;
         this.lastRoll = null;
+        this.turnLocked = false;
         this.discoverable = discoverable;
         this.createdAt = Date.now();
         this.hostname = null;
@@ -372,6 +373,10 @@ class Game {
             return { success: false, message: 'Game has ended' };
         }
 
+        if (this.turnLocked) {
+            return { success: false, message: 'Wait for the current turn animation to finish' };
+        }
+
         const player = this.players[this.currentTurn];
         if (player.id !== playerId) {
             return { success: false, message: 'Not your turn' };
@@ -417,6 +422,7 @@ class Game {
                     this.currentTurn = (this.currentTurn + 1) % this.players.length;
                 }
                 
+                this.turnLocked = true;
                 return {
                     success: true,
                     diceRoll: diceTotal,
@@ -438,6 +444,7 @@ class Game {
                 // No another turn for not rolling 6
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
                 
+                this.turnLocked = true;
                 return {
                     success: true,
                     diceRoll: diceTotal,
@@ -480,6 +487,7 @@ class Game {
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
             }
             
+            this.turnLocked = true;
             return {
                 success: true,
                 diceRoll: diceTotal,
@@ -509,6 +517,7 @@ class Game {
             if (!anotherTurn) {
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
             }
+            this.turnLocked = true;
             return {
                 success: true,
                 diceRoll: diceTotal,
@@ -616,6 +625,7 @@ class Game {
             this.currentTurn = (this.currentTurn + 1) % this.players.length;
         }
 
+        this.turnLocked = true;
         return {
             success: true,
             diceRoll: diceTotal,
@@ -938,6 +948,7 @@ io.on('connection', (socket) => {
         game.started = false;
         game.winner = null;
         game.lastRoll = null;
+        game.turnLocked = false;
         
         // Reset board hazards/state
         game.voids = [];
@@ -1099,6 +1110,16 @@ io.on('connection', (socket) => {
 
         // Update all clients with new void state
         io.to(roomId).emit('game-state', game.getState());
+    });
+
+    socket.on('turn-animation-complete', ({ roomId, playerId }) => {
+        const game = games.get(roomId);
+        if (!game || !game.started) return;
+
+        const player = game.players.find(p => p.persistentId === playerId);
+        if (!player) return;
+
+        game.turnLocked = false;
     });
 
     socket.on('trigger-test-explosion', ({ roomId, position = null }) => {

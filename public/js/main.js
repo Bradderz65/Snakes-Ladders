@@ -252,24 +252,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Game buttons
     DOM.rollDiceBtn.addEventListener('click', () => {
-        if (GameState.gameState && GameState.currentPlayer && !GameState.animationInProgress) {
+        if (GameState.gameState && GameState.currentPlayer && !GameState.animationInProgress && !GameState.turnResolutionInProgress) {
             const currentTurnPlayer = GameState.gameState.players[GameState.gameState.currentTurn];
             const isMyTurn = currentTurnPlayer.persistentId === GameState.currentPlayer.persistentId;
             if (isMyTurn && !DOM.rollDiceBtn.disabled) {
                 DOM.rollDiceBtn.disabled = true;
                 DOM.mobileRollBtn.disabled = true;
+                GameState.turnResolutionInProgress = true;
                 GameState.socket.emit('roll-dice', { roomId: GameState.currentRoom });
             }
         }
     });
 
     DOM.mobileRollBtn.addEventListener('click', () => {
-        if (GameState.gameState && GameState.currentPlayer && !GameState.animationInProgress) {
+        if (GameState.gameState && GameState.currentPlayer && !GameState.animationInProgress && !GameState.turnResolutionInProgress) {
             const currentTurnPlayer = GameState.gameState.players[GameState.gameState.currentTurn];
             const isMyTurn = currentTurnPlayer.persistentId === GameState.currentPlayer.persistentId;
             if (isMyTurn && !DOM.mobileRollBtn.disabled) {
                 DOM.mobileRollBtn.disabled = true;
                 DOM.rollDiceBtn.disabled = true;
+                GameState.turnResolutionInProgress = true;
                 GameState.socket.emit('roll-dice', { roomId: GameState.currentRoom });
             }
         }

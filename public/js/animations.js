@@ -85,6 +85,20 @@ const Animations = {
             steps.push(startPos + i);
         }
 
+        const stepDuration = Math.max(
+            200,
+            CONFIG.ANIMATION.STEP_DURATION_BASE - (diceRoll * CONFIG.ANIMATION.STEP_DURATION_REDUCTION)
+        );
+        let expectedAnimationTime = steps.length * stepDuration;
+        if (snakeOrLadder) {
+            expectedAnimationTime += CONFIG.ANIMATION.TRANSITION_DELAY;
+            if (snake) {
+                expectedAnimationTime += CONFIG.ANIMATION.SNAKE_DURATION;
+            } else if (ladder) {
+                expectedAnimationTime += CONFIG.ANIMATION.LADDER_DURATION;
+            }
+        }
+
         function animateStep(stepIndex) {
             if (stepIndex >= steps.length) {
                 if (snakeOrLadder) {
@@ -107,7 +121,7 @@ const Animations = {
                                     GameState.animationInProgress = false;
                                     
                                     const totalAnimationTime = performance.now() - animationStartTime;
-                                    if (totalAnimationTime > 1800) {
+                                    if (totalAnimationTime > expectedAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
                                         console.warn(`🐍 Slow snake animation: ${totalAnimationTime.toFixed(2)}ms`);
                                     }
                                     
@@ -133,7 +147,7 @@ const Animations = {
                                     });
                                     
                                     const totalAnimationTime = performance.now() - animationStartTime;
-                                    if (totalAnimationTime > 1500) {
+                                    if (totalAnimationTime > expectedAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
                                         console.warn(`🪜 Slow ladder animation: ${totalAnimationTime.toFixed(2)}ms`);
                                     }
 
@@ -146,7 +160,7 @@ const Animations = {
                     GameState.animationInProgress = false;
                     
                     const totalAnimationTime = performance.now() - animationStartTime;
-                    if (totalAnimationTime > 1500) {
+                    if (totalAnimationTime > expectedAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
                         console.warn(`🎬 Slow player movement animation: ${totalAnimationTime.toFixed(2)}ms for ${diceRoll} steps`);
                     }
                     
@@ -156,7 +170,7 @@ const Animations = {
             }
 
             const targetPos = steps[stepIndex];
-            const duration = Math.max(200, CONFIG.ANIMATION.STEP_DURATION_BASE - (diceRoll * CONFIG.ANIMATION.STEP_DURATION_REDUCTION));
+            const duration = stepDuration;
             const fromPos = stepIndex === 0 ? startPos : steps[stepIndex - 1];
 
             const now = Date.now();
@@ -183,12 +197,20 @@ const Animations = {
         animateStep(0);
     },
     
-    animateDiceRoll(diceValues, callback) {
+    animateDiceRoll(diceValues, callback, options = {}) {
         const diceAnimationStartTime = performance.now();
+        const playerName = options.playerName || '';
         
         const valuesArray = Array.isArray(diceValues) ? diceValues : [diceValues];
         
         DOM.diceContainer.innerHTML = '';
+
+        if (playerName) {
+            const label = document.createElement('div');
+            label.className = 'dice-roll-label';
+            label.textContent = `${playerName} is rolling`;
+            DOM.diceContainer.appendChild(label);
+        }
         
         const diceElements = [];
         valuesArray.forEach((val, index) => {
@@ -218,11 +240,12 @@ const Animations = {
         DOM.diceContainer.classList.add('rolling');
         
         diceElements.forEach(dice => dice.classList.add('rolling'));
-        
+
         let counter = 0;
         const totalFrames = CONFIG.ANIMATION.DICE_FRAMES;
         const frameDelay = CONFIG.ANIMATION.DICE_FRAME_DELAY;
         const resultHold = CONFIG.ANIMATION.DICE_RESULT_HOLD || 550;
+        const expectedDiceAnimationTime = (totalFrames * frameDelay) + resultHold + 150;
         
         const interval = setInterval(() => {
             diceElements.forEach(dice => {
@@ -244,11 +267,11 @@ const Animations = {
                     setTimeout(() => {
                         DOM.diceContainer.classList.remove('rolling');
                         DOM.diceBackdrop.classList.remove('active');
-                        
+
                         if (callback) callback();
-                        
+
                         const totalDiceAnimationTime = performance.now() - diceAnimationStartTime;
-                        if (totalDiceAnimationTime > 1000) {
+                        if (totalDiceAnimationTime > expectedDiceAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
                             console.warn(`🎲 Slow dice animation: ${totalDiceAnimationTime.toFixed(2)}ms`);
                         }
                     }, 150);

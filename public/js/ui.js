@@ -186,7 +186,13 @@ const UI = {
         });
 
         const isMyTurn = GameState.currentPlayer && currentTurnPlayer.persistentId === GameState.currentPlayer.persistentId;
-        if (isMyTurn && !GameState.gameState.winner && !GameState.animationInProgress) {
+        if (
+            isMyTurn &&
+            !GameState.gameState.winner &&
+            !GameState.animationInProgress &&
+            !GameState.diceAnimationInProgress &&
+            !GameState.turnResolutionInProgress
+        ) {
             DOM.rollDiceBtn.disabled = false;
             DOM.mobileRollBtn.disabled = false;
         } else {

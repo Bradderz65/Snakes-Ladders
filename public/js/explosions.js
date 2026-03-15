@@ -146,6 +146,19 @@ const Explosions = {
                         roomId: GameState.currentRoom,
                         position: explosion.minePosition
                     });
+
+                    if (
+                        GameState.pendingTurnAnimationCompletion &&
+                        GameState.pendingTurnAnimationCompletion.waitForExplosionPosition === explosion.minePosition
+                    ) {
+                        const pendingCompletion = GameState.pendingTurnAnimationCompletion;
+                        GameState.pendingTurnAnimationCompletion = null;
+                        GameState.turnResolutionInProgress = false;
+                        GameState.socket.emit('turn-animation-complete', {
+                            roomId: pendingCompletion.roomId,
+                            playerId: pendingCompletion.playerId
+                        });
+                    }
                 }
                 return false;
             }
