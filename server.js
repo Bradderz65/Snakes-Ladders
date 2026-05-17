@@ -61,6 +61,7 @@ class Game {
         this.winner = null;
         this.lastRoll = null;
         this.turnLocked = false;
+        this.turnLockedPlayerId = null;
         this.discoverable = discoverable;
         this.createdAt = Date.now();
         this.hostname = null;
@@ -322,6 +323,16 @@ class Game {
         return this.players.find(p => p.persistentId === persistentId);
     }
 
+    lockTurnForPlayer(player) {
+        this.turnLocked = true;
+        this.turnLockedPlayerId = player ? player.persistentId : null;
+    }
+
+    unlockTurn() {
+        this.turnLocked = false;
+        this.turnLockedPlayerId = null;
+    }
+
     shouldBotTakeOverLeavingPlayer(playerId) {
         if (!this.started || this.winner) return false;
 
@@ -453,7 +464,7 @@ class Game {
                     this.currentTurn = (this.currentTurn + 1) % this.players.length;
                 }
                 
-                this.turnLocked = true;
+                this.lockTurnForPlayer(player);
                 return {
                     success: true,
                     diceRoll: diceTotal,
@@ -475,7 +486,7 @@ class Game {
                 // No another turn for not rolling 6
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
                 
-                this.turnLocked = true;
+                this.lockTurnForPlayer(player);
                 return {
                     success: true,
                     diceRoll: diceTotal,
@@ -518,7 +529,7 @@ class Game {
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
             }
             
-            this.turnLocked = true;
+            this.lockTurnForPlayer(player);
             return {
                 success: true,
                 diceRoll: diceTotal,
@@ -548,7 +559,7 @@ class Game {
             if (!anotherTurn) {
                 this.currentTurn = (this.currentTurn + 1) % this.players.length;
             }
-            this.turnLocked = true;
+            this.lockTurnForPlayer(player);
             return {
                 success: true,
                 diceRoll: diceTotal,
@@ -656,7 +667,7 @@ class Game {
             this.currentTurn = (this.currentTurn + 1) % this.players.length;
         }
 
-        this.turnLocked = true;
+        this.lockTurnForPlayer(player);
         return {
             success: true,
             diceRoll: diceTotal,
@@ -853,7 +864,6 @@ function broadcastDiscovery() {
 
 const botTurnTimers = new Map();
 const BOT_TURN_DELAY_MS = 1200;
-const BOT_UNLOCK_FALLBACK_MS = 9000;
 
 function getCurrentTurnPlayer(game) {
     if (!game || game.players.length === 0) return null;
@@ -979,21 +989,6 @@ function scheduleBotTurn(roomId, reason = 'bot turn') {
         if (result.success) {
             io.to(roomId).emit('dice-rolled', result);
             io.to(roomId).emit('game-state', latestGame.getState());
-
-            const rollingPlayerId = result.player?.persistentId;
-            setTimeout(() => {
-                const fallbackGame = games.get(roomId);
-                if (
-                    fallbackGame &&
-                    fallbackGame.turnLocked &&
-                    rollingPlayerId &&
-                    fallbackGame.players.some(player => player.persistentId === rollingPlayerId && player.isBot)
-                ) {
-                    fallbackGame.turnLocked = false;
-                    io.to(roomId).emit('game-state', fallbackGame.getState());
-                    scheduleBotTurn(roomId, 'bot animation fallback');
-                }
-            }, BOT_UNLOCK_FALLBACK_MS);
         } else {
             console.log(`AI bot ${currentBot.name} could not roll in room ${roomId}: ${result.message}`);
         }
@@ -1138,7 +1133,7 @@ io.on('connection', (socket) => {
         game.started = false;
         game.winner = null;
         game.lastRoll = null;
-        game.turnLocked = false;
+        game.unlockTurn();
         
         // Reset board hazards/state
         game.voids = [];
@@ -1329,7 +1324,11 @@ io.on('connection', (socket) => {
         const player = game.players.find(p => p.persistentId === playerId);
         if (!player) return;
 
-        game.turnLocked = false;
+        if (game.turnLocked && game.turnLockedPlayerId && game.turnLockedPlayerId !== playerId) {
+            return;
+        }
+
+        game.unlockTurn();
         scheduleBotTurn(roomId, 'turn animation complete');
     });
 
