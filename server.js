@@ -283,6 +283,9 @@ class Game {
             color: color,
             icon: icon,
             ready: false,
+            isBot: false,
+            botTakeover: false,
+            botTakeoverAt: null,
             snakeHits: 0, // Track how many times player hit snakes
             hasDiceControl: false, // Whether player earned dice control power
             controlledDiceRoll: null, // Store controlled dice values {targetPlayerId, diceValues}
@@ -317,6 +320,34 @@ class Game {
 
     findPlayerByPersistentId(persistentId) {
         return this.players.find(p => p.persistentId === persistentId);
+    }
+
+    shouldBotTakeOverLeavingPlayer(playerId) {
+        if (!this.started || this.winner) return false;
+
+        const leavingPlayer = this.players.find(p => p.id === playerId);
+        if (!leavingPlayer || leavingPlayer.isBot) return false;
+
+        const remainingPlayers = this.players.filter(p => p.id !== playerId);
+        const remainingHumans = remainingPlayers.filter(p => !p.isBot);
+
+        // Only auto-fill the exact case where the game would otherwise become solo.
+        return remainingPlayers.length === 1 && remainingHumans.length === 1;
+    }
+
+    convertPlayerToBot(playerId) {
+        const player = this.players.find(p => p.id === playerId);
+        if (!player) {
+            return { success: false, message: 'Player not found in game' };
+        }
+
+        player.id = `bot_${player.persistentId}_${Date.now()}`;
+        player.ready = true;
+        player.isBot = true;
+        player.botTakeover = true;
+        player.botTakeoverAt = Date.now();
+
+        return { success: true, player };
     }
 
     removePlayer(playerId) {
@@ -654,6 +685,8 @@ class Game {
             color: player.color,
             icon: player.icon,
             ready: player.ready,
+            isBot: !!player.isBot,
+            botTakeover: !!player.botTakeover,
             snakeHits: player.snakeHits,
             hasDiceControl: player.hasDiceControl,
             hasUsedPower: player.hasUsedPower
@@ -818,6 +851,157 @@ function broadcastDiscovery() {
     }
 }
 
+const botTurnTimers = new Map();
+const BOT_TURN_DELAY_MS = 1200;
+const BOT_UNLOCK_FALLBACK_MS = 9000;
+
+function getCurrentTurnPlayer(game) {
+    if (!game || game.players.length === 0) return null;
+    return game.players[game.currentTurn] || null;
+}
+
+function getDiceCandidates(diceCount) {
+    if (diceCount === 2) {
+        const candidates = [];
+        for (let die1 = 1; die1 <= 6; die1++) {
+            for (let die2 = 1; die2 <= 6; die2++) {
+                candidates.push([die1, die2]);
+            }
+        }
+        return candidates;
+    }
+
+    return [1, 2, 3, 4, 5, 6].map(value => [value]);
+}
+
+function simulateFinalPositionForDice(game, player, diceValues) {
+    const total = game.getDiceTotal(diceValues);
+
+    if (game.requireSixToStart && player.position === 0) {
+        return diceValues.includes(6) ? 1 : 0;
+    }
+
+    let position = player.position + total;
+
+    if (game.exactRollToWin && position > WINNING_POSITION) {
+        position = WINNING_POSITION - (position - WINNING_POSITION);
+        if (position < 1) position = 1;
+    } else if (!game.exactRollToWin && position > WINNING_POSITION) {
+        position = player.position;
+    }
+
+    if (game.voids.includes(position)) {
+        position = Math.max(position - (total * 3), 1);
+    } else if (game.mines.includes(position)) {
+        position = 1;
+    } else if (game.getSnakes()[position]) {
+        position = game.getSnakes()[position];
+    } else if (game.getLadders()[position]) {
+        const ladderDestination = game.getLadders()[position];
+        if (game.mines.includes(ladderDestination)) {
+            position = 1;
+        } else if (game.getSnakes()[ladderDestination]) {
+            position = game.getSnakes()[ladderDestination];
+        } else {
+            position = ladderDestination;
+        }
+    }
+
+    return position;
+}
+
+function selectBotControlledDice(game, targetPlayer) {
+    return getDiceCandidates(game.diceCount)
+        .map(diceValues => ({
+            diceValues,
+            finalPosition: simulateFinalPositionForDice(game, targetPlayer, diceValues),
+            total: game.getDiceTotal(diceValues)
+        }))
+        .sort((a, b) => {
+            if (a.finalPosition !== b.finalPosition) {
+                return a.finalPosition - b.finalPosition;
+            }
+            return a.total - b.total;
+        })[0].diceValues;
+}
+
+function maybeUseBotDiceControl(game, botPlayer, roomId) {
+    if (!botPlayer.hasDiceControl || botPlayer.hasUsedPower || botPlayer.controlledDiceRoll) {
+        return;
+    }
+
+    const targetPlayer = game.players
+        .filter(player => player.persistentId !== botPlayer.persistentId)
+        .sort((a, b) => b.position - a.position)[0];
+
+    if (!targetPlayer) return;
+
+    const diceValues = selectBotControlledDice(game, targetPlayer);
+    botPlayer.controlledDiceRoll = {
+        targetPlayerId: targetPlayer.persistentId,
+        diceValues
+    };
+    botPlayer.hasDiceControl = false;
+    botPlayer.hasUsedPower = true;
+
+    io.to(roomId).emit('bot-dice-control-set', {
+        botName: botPlayer.name,
+        targetPlayerName: targetPlayer.name,
+        diceValues
+    });
+}
+
+function scheduleBotTurn(roomId, reason = 'bot turn') {
+    const game = games.get(roomId);
+    if (!game || !game.started || game.winner || game.turnLocked) return;
+
+    const botPlayer = getCurrentTurnPlayer(game);
+    if (!botPlayer || !botPlayer.isBot) return;
+
+    if (botTurnTimers.has(roomId)) {
+        clearTimeout(botTurnTimers.get(roomId));
+    }
+
+    const timer = setTimeout(() => {
+        botTurnTimers.delete(roomId);
+
+        const latestGame = games.get(roomId);
+        if (!latestGame || !latestGame.started || latestGame.winner || latestGame.turnLocked) return;
+
+        const currentBot = getCurrentTurnPlayer(latestGame);
+        if (!currentBot || !currentBot.isBot) return;
+
+        maybeUseBotDiceControl(latestGame, currentBot, roomId);
+
+        console.log(`AI bot ${currentBot.name} rolling in room ${roomId} (${reason})`);
+        const result = latestGame.movePlayer(currentBot.id);
+
+        if (result.success) {
+            io.to(roomId).emit('dice-rolled', result);
+            io.to(roomId).emit('game-state', latestGame.getState());
+
+            const rollingPlayerId = result.player?.persistentId;
+            setTimeout(() => {
+                const fallbackGame = games.get(roomId);
+                if (
+                    fallbackGame &&
+                    fallbackGame.turnLocked &&
+                    rollingPlayerId &&
+                    fallbackGame.players.some(player => player.persistentId === rollingPlayerId && player.isBot)
+                ) {
+                    fallbackGame.turnLocked = false;
+                    io.to(roomId).emit('game-state', fallbackGame.getState());
+                    scheduleBotTurn(roomId, 'bot animation fallback');
+                }
+            }, BOT_UNLOCK_FALLBACK_MS);
+        } else {
+            console.log(`AI bot ${currentBot.name} could not roll in room ${roomId}: ${result.message}`);
+        }
+    }, BOT_TURN_DELAY_MS);
+
+    botTurnTimers.set(roomId, timer);
+}
+
 // Socket.IO event handlers
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
@@ -914,6 +1098,7 @@ io.on('connection', (socket) => {
         if (game.startGame()) {
             io.to(roomId).emit('game-started');
             io.to(roomId).emit('game-state', game.getState());
+            scheduleBotTurn(roomId, 'game started');
         }
     });
 
@@ -935,10 +1120,15 @@ io.on('connection', (socket) => {
         const game = games.get(roomId);
         if (!game) return;
 
+        if (botTurnTimers.has(roomId)) {
+            clearTimeout(botTurnTimers.get(roomId));
+            botTurnTimers.delete(roomId);
+        }
+
         // Reset all players
         game.players.forEach(player => {
             player.position = 0;
-            player.ready = false;
+            player.ready = !!player.isBot;
             player.snakeHits = 0;
             player.hasDiceControl = false;
             player.controlledDiceRoll = null;
@@ -1038,11 +1228,29 @@ io.on('connection', (socket) => {
         const player = game.players.find(p => p.id === socket.id);
         if (player) {
             console.log(`Player ${player.name} manually disconnected from room ${roomId}`);
-            game.removePlayer(socket.id);
+
+            const botTakeover = game.shouldBotTakeOverLeavingPlayer(socket.id)
+                ? game.convertPlayerToBot(socket.id)
+                : { success: false };
+
             socket.leave(roomId);
+
+            if (botTakeover.success) {
+                io.to(roomId).emit('bot-took-over', {
+                    playerName: player.name,
+                    botName: botTakeover.player.name
+                });
+                scheduleBotTurn(roomId, 'player left and bot took over');
+            } else {
+                game.removePlayer(socket.id);
+            }
 
             // Delete game if no players left
             if (game.players.length === 0) {
+                if (botTurnTimers.has(roomId)) {
+                    clearTimeout(botTurnTimers.get(roomId));
+                    botTurnTimers.delete(roomId);
+                }
                 games.delete(roomId);
                 // Stop discovery if no discoverable games left
                 const hasDiscoverableGames = Array.from(games.values()).some(g => g.discoverable);
@@ -1053,7 +1261,9 @@ io.on('connection', (socket) => {
                 }
             } else {
                 io.to(roomId).emit('game-state', game.getState());
-                io.to(roomId).emit('player-left', { playerName: player.name });
+                if (!botTakeover.success) {
+                    io.to(roomId).emit('player-left', { playerName: player.name });
+                }
             }
 
             socket.emit('disconnected');
@@ -1120,6 +1330,7 @@ io.on('connection', (socket) => {
         if (!player) return;
 
         game.turnLocked = false;
+        scheduleBotTurn(roomId, 'turn animation complete');
     });
 
     socket.on('trigger-test-explosion', ({ roomId, position = null }) => {

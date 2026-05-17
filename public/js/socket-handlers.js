@@ -89,6 +89,14 @@ const SocketHandlers = {
             }
         });
 
+        socket.on('bot-took-over', ({ playerName, botName }) => {
+            UI.showNotification(`AI took over for ${playerName}. The game can continue.`, 'info');
+        });
+
+        socket.on('bot-dice-control-set', ({ botName, targetPlayerName, diceValues }) => {
+            UI.showNotification(`${botName} (AI) used dice control on ${targetPlayerName}: ${diceValues.join('-')}`, 'warning');
+        });
+
         socket.on('game-state', (state) => {
             const wasStarted = GameState.gameState && GameState.gameState.started;
             GameState.gameState = state;

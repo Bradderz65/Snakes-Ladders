@@ -12,6 +12,18 @@ const UI = {
             DOM.notification.classList.remove('show');
         }, 3500);
     },
+
+    formatPlayerName(player, options = {}) {
+        if (!player) return '';
+
+        const suffixes = [];
+        if (player.isBot) suffixes.push('AI');
+        if (options.isCurrentPlayer) suffixes.push('You');
+
+        return suffixes.length > 0
+            ? `${player.name} (${suffixes.join(', ')})`
+            : player.name;
+    },
     
     switchScreen(screen) {
         DOM.welcomeScreen.classList.remove('active');
@@ -73,7 +85,7 @@ const UI = {
                     <span class="player-icon">${player.icon || player.name.charAt(0).toUpperCase()}</span>
                 </div>
                 <div class="player-info">
-                    <div class="player-name">${player.name}${isCurrentPlayer ? ' (You)' : ''}</div>
+                    <div class="player-name">${UI.formatPlayerName(player, { isCurrentPlayer })}</div>
                 </div>
                 <span class="ready-badge ${player.ready ? 'ready' : 'waiting'}">
                     ${player.ready ? '✓ Ready' : 'Waiting...'}
@@ -107,7 +119,7 @@ const UI = {
         const currentTurnPlayer = GameState.gameState.players[GameState.gameState.currentTurn];
         DOM.currentTurnDisplay.innerHTML = `
             <div style="color: ${currentTurnPlayer.color}">
-                ${currentTurnPlayer.name}'s Turn
+                ${UI.formatPlayerName(currentTurnPlayer)}'s Turn
             </div>
         `;
         
@@ -132,7 +144,7 @@ const UI = {
 
         DOM.mobileCurrentTurn.innerHTML = `
             <div style="color: ${currentTurnPlayer.color}">
-                ${currentTurnPlayer.name}'s Turn
+                ${UI.formatPlayerName(currentTurnPlayer)}'s Turn
             </div>
         `;
 
@@ -154,7 +166,7 @@ const UI = {
                     <span class="scoreboard-icon">${player.icon || player.name.charAt(0).toUpperCase()}</span>
                 </div>
                 <div class="scoreboard-details">
-                    <div class="scoreboard-name">${player.name}</div>
+                    <div class="scoreboard-name">${UI.formatPlayerName(player)}</div>
                     <div class="scoreboard-position">Position: ${player.position}</div>
                 </div>
             `;
@@ -177,7 +189,7 @@ const UI = {
                     <span class="mobile-scoreboard-icon">${player.icon || player.name.charAt(0).toUpperCase()}</span>
                 </div>
                 <div class="mobile-scoreboard-details">
-                    <div class="mobile-scoreboard-name">${player.name}</div>
+                    <div class="mobile-scoreboard-name">${UI.formatPlayerName(player)}</div>
                     <div class="mobile-scoreboard-position">Pos: ${player.position}</div>
                 </div>
             `;
@@ -208,7 +220,7 @@ const UI = {
     },
     
     showWinnerModal(winner) {
-        DOM.winnerName.textContent = `${winner.name}`;
+        DOM.winnerName.textContent = `${UI.formatPlayerName(winner)}`;
         const winnerRollCount = GameState.playerRollCounts[winner.persistentId] || 0;
         DOM.winnerRolls.textContent = winnerRollCount;
 
@@ -285,7 +297,7 @@ const UI = {
                 option.setAttribute('aria-pressed', 'false');
                 option.innerHTML = `
                     <span class="player-option-icon">${player.icon || '🙂'}</span>
-                    <span class="player-option-name">${player.name}</span>
+                    <span class="player-option-name">${UI.formatPlayerName(player)}</span>
                 `;
                 DOM.targetPlayerOptions.appendChild(option);
             }
