@@ -21,6 +21,33 @@ A modern, fully functional multiplayer Snakes and Ladders game that works seamle
 - Node.js (version 14 or higher)
 - npm (comes with Node.js)
 
+### One-Line Install
+
+**Termux:**
+```bash
+pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh
+```
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh
+```
+
+To install and start the server immediately on Termux:
+```bash
+pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh -s -- --start
+```
+
+To install and start the server immediately on Linux / macOS:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh -s -- --start
+```
+
+If you already cloned the repo:
+```bash
+sh install.sh
+```
+
 ### Installation
 
 1. **Install dependencies:**

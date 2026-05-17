@@ -4,6 +4,7 @@
   "description": "Modern multiplayer Snakes and Ladders game for local network",
   "main": "server.js",
   "scripts": {
+    "setup": "sh install.sh",
     "start": "node server.js",
     "dev": "node server.js",
     "dev:live": "nodemon --watch server.js --ext js,json --signal SIGTERM server.js",
