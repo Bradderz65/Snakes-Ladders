@@ -48,6 +48,26 @@ const Customization = {
         DOM.conflictModal.classList.add('active');
     },
     
+    tryJoinWithConflictCheck(action) {
+        let players = [];
+        if (action.type === 'join-room' && GameState.lastRoomPeek?.found) {
+            players = GameState.lastRoomPeek.players || [];
+        } else if (GameState.gameState?.players) {
+            players = GameState.gameState.players;
+        }
+
+        if (players.length > 0) {
+            const conflicts = this.checkForConflicts(players);
+            if (conflicts.length > 0) {
+                GameState.pendingJoinAction = action;
+                this.showConflictModal(conflicts);
+                return;
+            }
+        }
+
+        this.executeJoinAction(action);
+    },
+
     executeJoinAction(action) {
         if (action.type === 'create-room') {
             const discoverable = DOM.enableDiscoveryCheckbox.checked;

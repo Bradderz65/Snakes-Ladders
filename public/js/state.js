@@ -6,6 +6,10 @@ const GameState = {
     currentPlayer: null,
     gameState: null,
     isReconnecting: false,
+    isHost: false,
+    connectionStatus: 'connecting',
+    soundMuted: localStorage.getItem('snakesSoundMuted') === 'true',
+    lastRoomPeek: null,
     
     // Animation state
     animationInProgress: false,
@@ -33,7 +37,7 @@ const GameState = {
     
     // Player customization
     selectedColor: '#FF6B6B',
-    selectedIcon: '🎮',
+    selectedIcon: '🎯',
     pendingJoinAction: null,
     selectedDiceCount: 1,
     selectedSnakeThreshold: 3,

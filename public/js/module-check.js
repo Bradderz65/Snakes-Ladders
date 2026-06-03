@@ -1,37 +1,53 @@
-// Module integrity check - add this temporarily to verify all modules loaded
-console.log('🔍 Checking module integrity...');
+// Dev-only script integrity check (localhost)
+(function () {
+    const script = document.currentScript;
+    if (!script?.hasAttribute('data-dev-only')) return;
+    if (!/localhost|127\.0\.0\.1/.test(window.location.hostname)) return;
 
-const requiredModules = [
-    'CONFIG',
-    'GameState',
-    'Utils',
-    'DOM',
-    'AudioSystem',
-    'PerformanceMonitor',
-    'Camera',
-    'Draw',
-    'Explosions',
-    'Renderer',
-    'Animations',
-    'Customization',
-    'Discovery',
-    'UI',
-    'SocketHandlers'
-];
+    const requiredModules = [
+        'CONFIG',
+        'GameState',
+        'Utils',
+        'DOM',
+        'AudioSystem',
+        'PerformanceMonitor',
+        'Camera',
+        'Draw',
+        'Explosions',
+        'Renderer',
+        'Animations',
+        'Customization',
+        'Discovery',
+        'UI',
+        'SocketHandlers'
+    ];
 
-let allModulesLoaded = true;
-
-requiredModules.forEach(moduleName => {
-    if (typeof window[moduleName] === 'undefined') {
-        console.error(`❌ Module ${moduleName} not loaded!`);
-        allModulesLoaded = false;
-    } else {
-        console.log(`✅ ${moduleName} loaded`);
+    /** Top-level const bindings are not properties of window; probe global scope. */
+    function isModuleLoaded(name) {
+        if (typeof globalThis[name] !== 'undefined') return true;
+        try {
+            return new Function(`return typeof ${name} !== 'undefined'`)();
+        } catch {
+            return false;
+        }
     }
-});
 
-if (allModulesLoaded) {
-    console.log('✨ All modules loaded successfully!');
-} else {
-    console.error('⚠️ Some modules failed to load. Check the console for details.');
-}
+    console.log('Checking module integrity...');
+
+    let allModulesLoaded = true;
+
+    requiredModules.forEach(moduleName => {
+        if (!isModuleLoaded(moduleName)) {
+            console.error(`Module ${moduleName} not loaded!`);
+            allModulesLoaded = false;
+        } else {
+            console.log(`${moduleName} loaded`);
+        }
+    });
+
+    if (allModulesLoaded) {
+        console.log('All modules loaded successfully.');
+    } else {
+        console.error('Some modules failed to load. Check the Network tab for 404s or syntax errors above.');
+    }
+})();

@@ -8,9 +8,18 @@
     "start": "node server.js",
     "dev": "node server.js",
     "dev:live": "nodemon --watch server.js --ext js,json --signal SIGTERM server.js",
-    "launch:dev": "./launch-dev.sh"
+    "launch:dev": "./launch-dev.sh",
+    "test": "node --test test/*.test.js",
+    "test:unit": "node --test test/game-engine.test.js",
+    "test:integration": "node --test test/integration.test.js",
+    "test:watch": "node --test --watch test/*.test.js"
   },
-  "keywords": ["snakes", "ladders", "multiplayer", "game"],
+  "keywords": [
+    "snakes",
+    "ladders",
+    "multiplayer",
+    "game"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -18,6 +27,7 @@
     "socket.io": "^4.6.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "socket.io-client": "^4.6.1"
   }
 }

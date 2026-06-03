@@ -153,7 +153,7 @@ const Camera = {
     apply(ctx) {
         if (!this.enabled) return;
 
-        const isMobile = window.innerWidth <= 768;
+        const isMobile = Utils.isMobileLayout();
         if (!isMobile) return;
 
         const canvas = DOM.canvas;
@@ -174,20 +174,17 @@ const Camera = {
     },
     
     updateButtonIcon() {
-        const cameraIcon = DOM.mobileCameraBtn.querySelector('.camera-icon');
-        const cameraState = DOM.mobileCameraBtn.querySelector('.camera-state');
-        if (cameraIcon) {
-            if (this.enabled) {
-                cameraIcon.textContent = '🎯';
-                DOM.mobileCameraBtn.classList.add('active');
-                DOM.mobileCameraBtn.setAttribute('aria-label', 'Disable follow camera');
-                if (cameraState) cameraState.textContent = 'On';
-            } else {
-                cameraIcon.textContent = '📷';
-                DOM.mobileCameraBtn.classList.remove('active');
-                DOM.mobileCameraBtn.setAttribute('aria-label', 'Enable follow camera');
-                if (cameraState) cameraState.textContent = 'Off';
-            }
+        const cameraState = DOM.mobileCameraBtn?.querySelector('.camera-state');
+        if (!DOM.mobileCameraBtn) return;
+
+        if (this.enabled) {
+            DOM.mobileCameraBtn.classList.add('active');
+            DOM.mobileCameraBtn.setAttribute('aria-label', 'Disable follow camera');
+            if (cameraState) cameraState.textContent = 'On';
+        } else {
+            DOM.mobileCameraBtn.classList.remove('active');
+            DOM.mobileCameraBtn.setAttribute('aria-label', 'Enable follow camera');
+            if (cameraState) cameraState.textContent = 'Off';
         }
     }
 };

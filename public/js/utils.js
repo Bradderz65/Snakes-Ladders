@@ -1,5 +1,66 @@
 // Utility functions
 const Utils = {
+    /** Touch / narrow layouts — wider than 768px for landscape phones */
+    isMobileLayout() {
+        if (typeof window === 'undefined') return false;
+        return window.matchMedia('(max-width: 1024px), (pointer: coarse)').matches;
+    },
+
+    /** Keep mobile grid + chrome in sync with viewport (landscape phones are often >768px wide). */
+    syncGameLayoutMode() {
+        const gameScreen = document.getElementById('game-screen');
+        const gameActive = gameScreen?.classList.contains('active');
+        const useMobileChrome = !!(gameActive && Utils.isMobileLayout());
+
+        document.body.classList.toggle('game-active-mobile', useMobileChrome);
+        if (gameScreen) {
+            gameScreen.classList.toggle('mobile-game-layout', useMobileChrome);
+        }
+        return useMobileChrome;
+    },
+
+    escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    },
+
+    async copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (e) {
+                // fall through
+            }
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            return true;
+        } catch (e) {
+            document.body.removeChild(textarea);
+            return false;
+        }
+    },
+
+    getInviteUrl(roomId) {
+        const params = new URLSearchParams({
+            autoJoin: 'true',
+            room: roomId
+        });
+        const name = document.getElementById('player-name')?.value?.trim();
+        if (name) params.set('name', name);
+        return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    },
+
     easeInOutQuad(t) {
         return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     },
@@ -17,14 +78,19 @@ const Utils = {
     
     getPosition(num) {
         const boardSize = CONFIG.BOARD_SIZE;
-        const cellSize = GameState.canvasLogicalSize / boardSize;
+        const canvasSize = GameState.canvasLogicalSize || CONFIG.CANVAS_LOGICAL_SIZE;
+        const cellSize = canvasSize / boardSize;
 
-        if (num <= 0) return { x: cellSize / 2, y: GameState.canvasLogicalSize - cellSize / 2 };
+        if (!cellSize || !canvasSize) {
+            return { x: canvasSize / 2, y: canvasSize / 2 };
+        }
+
+        if (num <= 0) return { x: cellSize / 2, y: canvasSize - cellSize / 2 };
         if (num > 100) num = 100;
         
         if (!isFinite(num) || isNaN(num)) {
             console.warn(`⚠️ Invalid position number: ${num}`);
-            return { x: 0, y: GameState.canvasLogicalSize };
+            return { x: 0, y: canvasSize };
         }
 
         const rowFromBottom = Math.floor((num - 1) / boardSize);
@@ -40,9 +106,8 @@ const Utils = {
         const x = col * cellSize + cellSize / 2;
         const y = row * cellSize + cellSize / 2;
 
-        if (!isFinite(x) || !isFinite(y) || !cellSize || !GameState.canvasLogicalSize || isNaN(x) || isNaN(y)) {
-            console.warn(`⚠️ Invalid coordinates calculated in getPosition: num=${num}, x=${x}, y=${y}, cellSize=${cellSize}`);
-            return { x: GameState.canvasLogicalSize / 2, y: GameState.canvasLogicalSize / 2 };
+        if (!isFinite(x) || !isFinite(y) || isNaN(x) || isNaN(y)) {
+            return { x: canvasSize / 2, y: canvasSize / 2 };
         }
 
         return { x, y };

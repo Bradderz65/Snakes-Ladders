@@ -13,6 +13,10 @@ A modern, fully functional multiplayer Snakes and Ladders game that works seamle
 - 📱 **Mobile Optimized** - Touch-friendly interface for mobile devices
 - 🔌 **Auto-Reconnect** - Refresh the page without losing your game session
 - 🚪 **Manual Disconnect** - Leave game button for intentional exits
+- 👑 **Host Controls** - Room creator starts/resets the game and manages the lobby
+- 🔗 **Invite Links** - Copy a shareable join URL from the lobby
+- 🔊 **Sound Toggle** - Mute/unmute game sounds
+- 📡 **Connection Indicator** - See when you're connected or reconnecting
 
 ## 🚀 Quick Start
 
@@ -118,7 +122,8 @@ Look for your local IP address (usually starts with 192.168.x.x or 10.x.x.x)
 - **Auto-Reconnect:** If you refresh the page or accidentally close the browser, the game will automatically reconnect you when you return
 - **Leave Game Button:** Use the red "Leave Game" button in the lobby or game screen to permanently leave
 - **Session Storage:** Your game session is saved locally, so you can refresh without losing your spot
-- **Other Players:** If a player disconnects, they remain in the game and can reconnect. Only manual "Leave Game" removes them
+- **Other Players:** If a player disconnects during a game, they remain and can reconnect. In the lobby, inactive players are removed after 30 minutes. The host can remove players before the game starts.
+- **Host:** The player who created the room starts the game and can reset it. Only the host sees test tools and reset during play.
 
 ## 🛠️ Technical Details
 
@@ -132,13 +137,13 @@ Look for your local IP address (usually starts with 192.168.x.x or 10.x.x.x)
 
 ```
 snakes-and-ladders/
-├── server.js           # Backend server with game logic
-├── package.json        # Project dependencies
+├── server.js              # Backend server with game logic
+├── package.json           # Project dependencies
 ├── public/
-│   ├── index.html     # Main HTML file
-│   ├── style.css      # Styling and responsive design
-│   └── game.js        # Client-side game logic and rendering
-└── README.md          # This file
+│   ├── index.html         # Main HTML file
+│   ├── style.css          # Styling and responsive design
+│   └── js/                # Modular client (main.js, ui.js, socket-handlers.js, …)
+└── README.md              # This file
 ```
 
 ### Game Configuration
@@ -171,7 +176,6 @@ The game includes:
 - 36 → 44
 - 51 → 67
 - 71 → 91
-- 80 → 100
 
 ## 📱 Device Compatibility
 
@@ -213,6 +217,19 @@ PORT=8080 npm start
 
 ### Development Mode
 The server automatically serves static files from the `public` directory. Any changes to client-side files will be reflected on page refresh.
+
+```bash
+npm run dev:live   # nodemon — restarts on server.js changes
+```
+
+### Tests
+
+```bash
+npm test              # unit + Socket.IO integration tests
+npm run test:watch    # re-run on file changes
+```
+
+Tests cover game rules (sanitization, host, customization, movement), and live server flows (create/join, peek, start, debounce, turn unlock, kick, discovery, reconnect, host-only reset).
 
 ## 🤝 Contributing
 

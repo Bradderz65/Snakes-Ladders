@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('touchstart', initAudioOnInteraction);
 
     // Initialize socket handlers
+    UI.updateConnectionStatus('connecting', 'Connecting…');
     const socket = io();
     SocketHandlers.init(socket);
 
@@ -44,6 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Color selection
     DOM.colorOptions.forEach(option => {
         option.addEventListener('click', () => {
+            if (option.classList.contains('taken')) {
+                UI.showNotification('This color is already taken in the room', 'warning');
+                return;
+            }
             document.querySelectorAll('.color-option.selected').forEach(el => {
                 el.classList.remove('selected');
             });
@@ -57,6 +62,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Icon selection
     DOM.iconOptions.forEach(option => {
         option.addEventListener('click', () => {
+            if (option.classList.contains('taken')) {
+                UI.showNotification('This icon is already taken in the room', 'warning');
+                return;
+            }
             document.querySelectorAll('.icon-option.selected').forEach(el => {
                 el.classList.remove('selected');
             });
@@ -75,19 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (GameState.gameState && GameState.gameState.players) {
-            const conflicts = Customization.checkForConflicts(GameState.gameState.players);
-            if (conflicts.length > 0) {
-                GameState.pendingJoinAction = {
-                    type: 'create-room',
-                    playerName: name
-                };
-                Customization.showConflictModal(conflicts);
-                return;
-            }
-        }
-
-        Customization.executeJoinAction({
+        Customization.tryJoinWithConflictCheck({
             type: 'create-room',
             playerName: name
         });
@@ -123,28 +120,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (GameState.gameState && GameState.gameState.players) {
-            const conflicts = Customization.checkForConflicts(GameState.gameState.players);
-            if (conflicts.length > 0) {
-                GameState.pendingJoinAction = {
-                    type: 'join-room',
-                    roomId: roomCode,
-                    playerName: name
-                };
-                Customization.showConflictModal(conflicts);
-                return;
-            }
-        }
-
-        Customization.executeJoinAction({
+        Customization.tryJoinWithConflictCheck({
             type: 'join-room',
             roomId: roomCode,
             playerName: name
         });
-    });
-
-    DOM.roomCodeInput.addEventListener('input', (e) => {
-        e.target.value = e.target.value.toUpperCase();
     });
 
     // Conflict modal buttons
@@ -159,7 +139,10 @@ document.addEventListener('DOMContentLoaded', () => {
     DOM.changeCustomizationBtn.addEventListener('click', () => {
         DOM.conflictModal.classList.remove('active');
         GameState.pendingJoinAction = null;
-        document.querySelector('.player-customization').scrollIntoView({ behavior: 'smooth' });
+        const scrollTarget = DOM.stepColor || DOM.setupScreen;
+        if (scrollTarget) {
+            scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     });
 
     // Game options
@@ -235,11 +218,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Lobby buttons
-    DOM.copyRoomCodeBtn.addEventListener('click', () => {
+    DOM.copyRoomCodeBtn.addEventListener('click', async () => {
         const roomCode = DOM.roomCodeDisplay.textContent;
-        navigator.clipboard.writeText(roomCode).then(() => {
-            UI.showNotification('Room code copied!', 'success');
+        const ok = await Utils.copyToClipboard(roomCode);
+        UI.showNotification(ok ? 'Room code copied!' : 'Could not copy room code', ok ? 'success' : 'error');
+    });
+
+    if (DOM.copyInviteLinkBtn) {
+        DOM.copyInviteLinkBtn.addEventListener('click', async () => {
+            if (!GameState.currentRoom) return;
+            const url = Utils.getInviteUrl(GameState.currentRoom);
+            const ok = await Utils.copyToClipboard(url);
+            UI.showNotification(ok ? 'Invite link copied!' : 'Could not copy link', ok ? 'success' : 'error');
         });
+    }
+
+    const toggleSoundMute = () => {
+        AudioSystem.toggleMuted();
+        UI.updateMuteButtonLabels();
+        UI.showNotification(GameState.soundMuted ? 'Sound muted' : 'Sound enabled', 'info');
+    };
+
+    if (DOM.muteSoundBtn) {
+        DOM.muteSoundBtn.addEventListener('click', toggleSoundMute);
+    }
+    if (DOM.mobileMuteBtn) {
+        DOM.mobileMuteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSoundMute();
+            UI.closeMobileSettingsMenu();
+        });
+    }
+
+    UI.updateMuteButtonLabels();
+
+    DOM.roomCodeInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+        const code = e.target.value.trim();
+        if (code.length === 6) {
+            GameState.socket.emit('peek-room', { roomId: code });
+        }
     });
 
     DOM.readyBtn.addEventListener('click', () => {
@@ -335,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Camera button
     DOM.mobileCameraBtn.addEventListener('click', () => {
-        const isMobile = window.innerWidth <= 768;
+        const isMobile = Utils.isMobileLayout();
 
         if (!isMobile) {
             UI.showNotification('Camera zoom is only available on mobile devices!', 'warning');
@@ -368,51 +386,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Mobile settings
-    DOM.mobileSettingsBtn.addEventListener('click', () => {
-        GameState.isMobileMenuOpen = !GameState.isMobileMenuOpen;
-        if (GameState.isMobileMenuOpen) {
-            DOM.mobileSettingsMenu.classList.add('open');
-            setTimeout(() => {
-                document.addEventListener('click', closeMobileMenu);
-            }, 100);
-        } else {
-            DOM.mobileSettingsMenu.classList.remove('open');
-            document.removeEventListener('click', closeMobileMenu);
-        }
-    });
-
-    function closeMobileMenu(event) {
-        if (!DOM.mobileSettingsBtn.contains(event.target) && !DOM.mobileSettingsMenu.contains(event.target)) {
-            GameState.isMobileMenuOpen = false;
-            DOM.mobileSettingsMenu.classList.remove('open');
-            document.removeEventListener('click', closeMobileMenu);
-        }
+    // Mobile settings (⋮ menu)
+    if (DOM.mobileSettingsBtn) {
+        DOM.mobileSettingsBtn.addEventListener('click', (e) => UI.toggleMobileSettingsMenu(e));
+        DOM.mobileSettingsBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                UI.toggleMobileSettingsMenu(e);
+            }
+        });
     }
 
-    DOM.mobileResetBtn.addEventListener('click', () => {
+    window.addEventListener('resize', () => {
+        if (GameState.isMobileMenuOpen) {
+            UI.positionMobileSettingsMenu();
+        }
+    });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', () => {
+            if (GameState.isMobileMenuOpen) {
+                UI.positionMobileSettingsMenu();
+            }
+        });
+    }
+
+    DOM.mobileResetBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (confirm('Are you sure you want to reset the game?')) {
             GameState.socket.emit('reset-game', { roomId: GameState.currentRoom });
-            DOM.mobileSettingsMenu.classList.remove('open');
-            GameState.isMobileMenuOpen = false;
-            document.removeEventListener('click', closeMobileMenu);
+            UI.closeMobileSettingsMenu();
         }
     });
 
-    DOM.mobileTestExplosionBtn.addEventListener('click', () => {
+    DOM.mobileTestExplosionBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (!GameState.currentRoom) return;
         GameState.socket.emit('trigger-test-explosion', { roomId: GameState.currentRoom });
-        DOM.mobileSettingsMenu.classList.remove('open');
-        GameState.isMobileMenuOpen = false;
-        document.removeEventListener('click', closeMobileMenu);
+        UI.closeMobileSettingsMenu();
     });
 
-    DOM.mobileLeaveBtn.addEventListener('click', () => {
+    DOM.mobileLeaveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (confirm('Are you sure you want to leave the game?')) {
             GameState.socket.emit('manual-disconnect', { roomId: GameState.currentRoom });
-            DOM.mobileSettingsMenu.classList.remove('open');
-            GameState.isMobileMenuOpen = false;
-            document.removeEventListener('click', closeMobileMenu);
+            UI.closeMobileSettingsMenu();
         }
     });
 
@@ -446,23 +462,61 @@ document.addEventListener('DOMContentLoaded', () => {
         DOM.winnerModal.classList.remove('active');
     });
 
-    // Window events
-    window.addEventListener('resize', () => {
-        Renderer.resizeCanvas();
-
-        const isMobile = window.innerWidth <= 768;
-        const isGameActive = DOM.gameScreen.classList.contains('active');
-
-        if (isMobile && isGameActive) {
-            document.body.classList.add('game-active-mobile');
-        } else {
-            document.body.classList.remove('game-active-mobile');
+    // Window / viewport resize (pinch-zoom and orientation need visualViewport)
+    const scheduleCanvasResize = () => {
+        if (Renderer._resizeCanvasRaf) {
+            cancelAnimationFrame(Renderer._resizeCanvasRaf);
         }
+        Renderer._resizeCanvasRaf = requestAnimationFrame(() => {
+            Renderer._resizeCanvasRaf = null;
+            Renderer.resizeCanvas();
+        });
+    };
+
+    const syncMobileGameLayout = () => {
+        Utils.syncGameLayoutMode();
+        scheduleCanvasResize();
+    };
+
+    window.addEventListener('resize', syncMobileGameLayout);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(syncMobileGameLayout, 150);
     });
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', syncMobileGameLayout);
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+        const gameLayoutObserver = new ResizeObserver(() => {
+            if (!DOM.gameScreen.classList.contains('active')) return;
+            scheduleCanvasResize();
+        });
+
+        const gameContainer = document.querySelector('.game-container');
+        const boardContainer = document.querySelector('.board-container');
+        const mobileBottomPanel = document.querySelector('.mobile-bottom-panel');
+
+        if (gameContainer) gameLayoutObserver.observe(gameContainer);
+        if (boardContainer) gameLayoutObserver.observe(boardContainer);
+        if (DOM.mobileTopBar) gameLayoutObserver.observe(DOM.mobileTopBar);
+        if (mobileBottomPanel) gameLayoutObserver.observe(mobileBottomPanel);
+    }
 
     window.addEventListener('load', () => {
+        Utils.syncGameLayoutMode();
         Renderer.resizeCanvas();
     });
+
+    if (typeof window.matchMedia === 'function') {
+        const mobileLayoutMq = window.matchMedia('(max-width: 1024px), (pointer: coarse)');
+        const onMobileLayoutChange = () => syncMobileGameLayout();
+        if (mobileLayoutMq.addEventListener) {
+            mobileLayoutMq.addEventListener('change', onMobileLayoutChange);
+        } else if (mobileLayoutMq.addListener) {
+            mobileLayoutMq.addListener(onMobileLayoutChange);
+        }
+    }
 
     // Initialize UI
     UI.updatePlayerPreview();

@@ -52,9 +52,17 @@ const DOM = {
     setControlBtn: document.getElementById('set-control-btn'),
     cancelControlBtn: document.getElementById('cancel-control-btn'),
     
+    // Connection
+    connectionStatus: document.getElementById('connection-status'),
+    connectionStatusText: document.getElementById('connection-status-text'),
+
     // Lobby
     roomCodeDisplay: document.getElementById('room-code-display'),
     copyRoomCodeBtn: document.getElementById('copy-room-code'),
+    copyInviteLinkBtn: document.getElementById('copy-invite-link'),
+    lobbyRules: document.getElementById('lobby-rules'),
+    lobbyHostHint: document.getElementById('lobby-host-hint'),
+    lobbyInfo: document.getElementById('lobby-info'),
     playersList: document.getElementById('players-list'),
     readyBtn: document.getElementById('ready-btn'),
     startGameBtn: document.getElementById('start-game-btn'),
@@ -65,8 +73,11 @@ const DOM = {
     lastRollDisplay: document.getElementById('last-roll-display'),
     scoreboardList: document.getElementById('scoreboard-list'),
     rollDiceBtn: document.getElementById('roll-dice-btn'),
+    muteSoundBtn: document.getElementById('mute-sound-btn'),
+    muteSoundLabel: document.getElementById('mute-sound-label'),
     testExplosionBtn: document.getElementById('test-explosion-btn'),
     resetGameBtn: document.getElementById('reset-game-btn'),
+    hostOnlyTools: document.querySelectorAll('.host-only-tool'),
     leaveGameBtn: document.getElementById('leave-game-btn'),
     canvas: document.getElementById('game-board'),
     ctx: document.getElementById('game-board').getContext('2d'),
@@ -82,6 +93,8 @@ const DOM = {
     mobileSettingsBtn: document.getElementById('mobile-settings-btn'),
     mobileSettingsMenu: document.getElementById('mobile-settings-menu'),
     mobileTestExplosionBtn: document.getElementById('mobile-test-explosion-btn'),
+    mobileMuteBtn: document.getElementById('mobile-mute-btn'),
+    mobileMuteLabel: document.getElementById('mobile-mute-label'),
     mobileResetBtn: document.getElementById('mobile-reset-btn'),
     mobileLeaveBtn: document.getElementById('mobile-leave-btn'),
     mobileCameraBtn: document.getElementById('mobile-camera-btn'),

@@ -3,9 +3,10 @@ const SocketHandlers = {
     init(socket) {
         GameState.socket = socket;
         
-        socket.on('room-created', ({ roomId, player, discoverable }) => {
+        socket.on('room-created', ({ roomId, player, discoverable, isHost }) => {
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.isHost = !!isHost;
             GameState.turnResolutionInProgress = false;
             GameState.pendingTurnAnimationCompletion = null;
             DOM.roomCodeDisplay.textContent = roomId;
@@ -19,9 +20,10 @@ const SocketHandlers = {
             }
         });
 
-        socket.on('room-joined', ({ roomId, player }) => {
+        socket.on('room-joined', ({ roomId, player, isHost }) => {
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.isHost = !!isHost;
             GameState.turnResolutionInProgress = false;
             GameState.pendingTurnAnimationCompletion = null;
             DOM.roomCodeDisplay.textContent = roomId;
@@ -30,9 +32,10 @@ const SocketHandlers = {
             UI.showNotification('Joined room successfully!', 'success');
         });
 
-        socket.on('reconnected', ({ roomId, player }) => {
+        socket.on('reconnected', ({ roomId, player, isHost }) => {
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.isHost = !!isHost;
             GameState.turnResolutionInProgress = false;
             GameState.pendingTurnAnimationCompletion = null;
             DOM.roomCodeDisplay.textContent = roomId;
@@ -53,10 +56,38 @@ const SocketHandlers = {
             }, 100);
         });
 
+        socket.on('kicked-from-room', () => {
+            GameState.clearSession();
+            GameState.currentRoom = null;
+            GameState.currentPlayer = null;
+            GameState.isHost = false;
+            GameState.gameState = null;
+            UI.switchScreen('welcome');
+            UI.showNotification('You were removed from the room', 'error');
+        });
+
+        socket.on('player-kicked', ({ playerName, reason }) => {
+            const reasonText = reason === 'host' ? 'removed by host' : 'inactive';
+            UI.showNotification(`${playerName} left (${reasonText})`, 'info');
+        });
+
+        socket.on('turn-unlocked', () => {
+            GameState.turnResolutionInProgress = false;
+            UI.updateGameScreen();
+        });
+
+        socket.on('room-peek', (data) => {
+            GameState.lastRoomPeek = data;
+            if (data.found && data.takenCustomizations) {
+                UI.updateTakenCustomizations(data.takenCustomizations);
+            }
+        });
+
         socket.on('disconnected', () => {
             GameState.clearSession();
             GameState.currentRoom = null;
             GameState.currentPlayer = null;
+            GameState.isHost = false;
             GameState.gameState = null;
             GameState.animationInProgress = false;
             GameState.turnResolutionInProgress = false;
@@ -68,7 +99,7 @@ const SocketHandlers = {
             GameState.explosionAnimations = [];
             DOM.mobileCameraBtn.classList.remove('active');
             Camera.updateButtonIcon();
-            document.body.classList.remove('game-active-mobile');
+            Utils.syncGameLayoutMode();
             UI.switchScreen('welcome');
             UI.showNotification('You have left the game', 'info');
         });
@@ -93,24 +124,43 @@ const SocketHandlers = {
             UI.showNotification(`AI took over for ${playerName}. The game can continue.`, 'info');
         });
 
-        socket.on('bot-dice-control-set', ({ botName, targetPlayerName, diceValues }) => {
-            UI.showNotification(`${botName} (AI) used dice control on ${targetPlayerName}: ${diceValues.join('-')}`, 'warning');
+        socket.on('bot-dice-control-set', ({ botName, targetPlayerName }) => {
+            UI.showNotification(`${botName} (AI) used revenge power on ${targetPlayerName}`, 'warning');
         });
 
         socket.on('game-state', (state) => {
             const wasStarted = GameState.gameState && GameState.gameState.started;
+            const previousTempVoids = GameState.gameState?.tempVoids || [];
             GameState.gameState = state;
             if (state.diceCount) {
                 GameState.currentDiceCount = state.diceCount;
             }
 
-            if (state.voids && GameState.gameState.tempVoids) {
+            if (state.playerRollCounts) {
+                GameState.playerRollCounts = { ...state.playerRollCounts };
+            }
+
+            if (GameState.currentPlayer && state.hostPersistentId) {
+                GameState.isHost = GameState.currentPlayer.persistentId === state.hostPersistentId;
+            }
+
+            if (state.voids && previousTempVoids.length > 0) {
+                GameState.gameState.tempVoids = previousTempVoids.filter(
+                    tile => !state.voids.includes(tile)
+                );
+            } else if (!state.voids || state.voids.length === 0) {
                 GameState.gameState.tempVoids = [];
+            }
+
+            if (state.takenCustomizations) {
+                UI.updateTakenCustomizations(state.takenCustomizations);
             }
 
             UI.updateLobby();
             if (state.started) {
+                Utils.syncGameLayoutMode();
                 UI.updateGameScreen();
+                UI.updateHostOnlyTools();
                 if (!wasStarted) {
                     setTimeout(() => Renderer.resizeCanvas(), 50);
                 }
@@ -125,6 +175,7 @@ const SocketHandlers = {
             GameState.turnResolutionInProgress = false;
             GameState.pendingTurnAnimationCompletion = null;
             UI.switchScreen('game');
+            UI.updateHostOnlyTools();
             UI.showNotification('Game started!', 'success');
         });
 
@@ -226,6 +277,7 @@ const SocketHandlers = {
 
         socket.on('connect', () => {
             console.log('Connected to server');
+            UI.updateConnectionStatus('connected', 'Connected');
             if (!GameState.currentRoom && !GameState.isReconnecting) {
                 const existingSession = GameState.loadSession();
                 if (existingSession) {
@@ -237,6 +289,18 @@ const SocketHandlers = {
                     });
                 }
             }
+        });
+
+        socket.on('disconnect', () => {
+            UI.updateConnectionStatus('disconnected', 'Disconnected — reconnecting…');
+        });
+
+        socket.io.on('reconnect_attempt', () => {
+            UI.updateConnectionStatus('connecting', 'Reconnecting…');
+        });
+
+        socket.io.on('reconnect', () => {
+            UI.updateConnectionStatus('connected', 'Connected');
         });
     },
     
@@ -306,7 +370,10 @@ const SocketHandlers = {
                     Renderer.stopRenderLoop();
                 }
                 
-                DOM.lastRollDisplay.textContent = `🎲 Rolled: ${result.diceRoll}`;
+                DOM.lastRollDisplay.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
+                if (DOM.mobileLastRoll) {
+                    DOM.mobileLastRoll.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
+                }
                 
                 UI.showNotification(`🎯 ${rollingPlayer.name} needs to roll a 6 to enter the board!`, 'info');
                 this.completeTurnAnimationIfNeeded({
@@ -338,7 +405,10 @@ const SocketHandlers = {
                         Renderer.stopRenderLoop();
                     }
                     
-                    DOM.lastRollDisplay.textContent = `🎲 Rolled: ${result.diceRoll}`;
+                    DOM.lastRollDisplay.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
+                if (DOM.mobileLastRoll) {
+                    DOM.mobileLastRoll.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
+                }
 
                     if (result.wasControlled && GameState.currentPlayer && result.controllerPlayerId === GameState.currentPlayer.persistentId) {
                         UI.showNotification(`🐍⚡ Your controlled roll succeeded! ${rollingPlayer.name} rolled ${result.diceRoll}`, 'success');
@@ -387,12 +457,12 @@ const SocketHandlers = {
                         if (GameState.currentDiceCount === 2) {
                             const diceRolls = result.diceRolls || [result.diceRoll];
                             if (diceRolls.length === 2 && diceRolls[0] === diceRolls[1]) {
-                                UI.showNotification(`🎲🎲 Rolled doubles (${diceRolls[0]}-${diceRolls[1]})! ${rollingPlayer.name} gets another turn!`, 'success');
+                                UI.showNotification(`Doubles (${diceRolls[0]}–${diceRolls[1]}) — ${rollingPlayer.name} rolls again`, 'success');
                             } else {
-                                UI.showNotification(`🎲 ${rollingPlayer.name} gets another turn!`, 'success');
+                                UI.showNotification(`${rollingPlayer.name} rolls again`, 'success');
                             }
                         } else {
-                            UI.showNotification(`🎲 Rolled a 6! ${rollingPlayer.name} gets another turn!`, 'success');
+                            UI.showNotification(`Rolled a 6 — ${rollingPlayer.name} rolls again`, 'success');
                         }
                     }
 

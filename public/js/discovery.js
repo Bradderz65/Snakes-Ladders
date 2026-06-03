@@ -29,9 +29,8 @@ const Discovery = {
         if (allGames.length === 0) {
             DOM.localGamesList.innerHTML = `
                 <div class="no-games-message">
-                    <span class="no-games-icon">🔍</span>
-                    <p>No local games found</p>
-                    <p class="no-games-hint">Create a discoverable game to see it here</p>
+                    <p class="no-games-title">No sessions found</p>
+                    <p class="no-games-hint">Create a discoverable room or refresh the list</p>
                 </div>
             `;
             return;
@@ -47,22 +46,34 @@ const Discovery = {
             const timeAgo = Utils.getTimeAgo(game.createdAt);
             const serverDisplay = `${game.serverIP}:${game.serverPort}`;
 
+            const safeHost = Utils.escapeHtml(game.hostname || 'Local Game');
+            const safeRules = game.rulesSummary ? Utils.escapeHtml(game.rulesSummary) : '';
+            const rulesLine = safeRules
+                ? `<div class="game-rules-preview">${safeRules}</div>`
+                : '';
+
             gameItem.innerHTML = `
                 <div class="game-info">
-                    <div class="game-host">${game.hostname}</div>
+                    <div class="game-host">${safeHost}</div>
                     <div class="game-details">
-                        <span class="game-room-code">${game.roomId}</span>
+                        <span class="game-room-code">${Utils.escapeHtml(game.roomId)}</span>
                         <span class="game-players">${game.playerCount}/${game.maxPlayers} players</span>
                     </div>
+                    ${rulesLine}
                     <div class="game-meta">
                         <span class="game-time">${timeAgo}</span>
                         <span class="game-server">${serverDisplay}</span>
                     </div>
                 </div>
-                <button class="btn btn-small btn-join" onclick="Discovery.joinLocalGame('${game.roomId}', '${game.serverIP}', ${game.serverPort})">
+                <button class="btn btn-small btn-join" data-room-id="${Utils.escapeHtml(game.roomId)}" data-server-ip="${Utils.escapeHtml(game.serverIP)}" data-server-port="${game.serverPort}">
                     Join
                 </button>
             `;
+
+            const joinBtn = gameItem.querySelector('.btn-join');
+            joinBtn.addEventListener('click', () => {
+                Discovery.joinLocalGame(game.roomId, game.serverIP, game.serverPort);
+            });
 
             DOM.localGamesList.appendChild(gameItem);
         });
@@ -87,25 +98,15 @@ const Discovery = {
              currentHost === '127.0.0.1');
 
         if (isSameServer) {
-            if (GameState.gameState && GameState.gameState.players) {
-                const conflicts = Customization.checkForConflicts(GameState.gameState.players);
-                if (conflicts.length > 0) {
-                    GameState.pendingJoinAction = {
-                        type: 'join-room',
-                        roomId: roomId,
-                        playerName: name
-                    };
-                    Customization.showConflictModal(conflicts);
-                    return;
-                }
-            }
-
+            GameState.socket.emit('peek-room', { roomId });
             UI.showNotification(`Joining game ${roomId}...`, 'info');
-            Customization.executeJoinAction({
-                type: 'join-room',
-                roomId: roomId,
-                playerName: name
-            });
+            setTimeout(() => {
+                Customization.tryJoinWithConflictCheck({
+                    type: 'join-room',
+                    roomId: roomId,
+                    playerName: name
+                });
+            }, 200);
         } else {
             const url = `http://${serverIP}:${serverPort}/?autoJoin=true&room=${roomId}&name=${encodeURIComponent(name)}&color=${encodeURIComponent(GameState.selectedColor)}&icon=${encodeURIComponent(GameState.selectedIcon)}`;
             window.open(url, '_blank');

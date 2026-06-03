@@ -34,6 +34,8 @@ const AudioSystem = {
     },
     
     play(soundName, volume = 1.0) {
+        if (GameState.soundMuted) return;
+
         const soundStartTime = performance.now();
         
         if (!this.audioContext || !this.soundBuffers[soundName]) {
@@ -84,6 +86,16 @@ const AudioSystem = {
     
     selectRandom(baseSound, altSound, baseProbability = 0.7) {
         return Math.random() < baseProbability ? baseSound : altSound;
+    },
+
+    setMuted(muted) {
+        GameState.soundMuted = muted;
+        localStorage.setItem('snakesSoundMuted', muted ? 'true' : 'false');
+    },
+
+    toggleMuted() {
+        this.setMuted(!GameState.soundMuted);
+        return GameState.soundMuted;
     },
 
     selectBySeed(baseSound, altSound, seed, baseProbability = 0.7) {

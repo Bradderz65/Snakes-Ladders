@@ -6,7 +6,8 @@ const Renderer = {
     
     drawBoard() {
         if (!GameState.gameState) return;
-        
+        if (!GameState.canvasLogicalSize || GameState.canvasLogicalSize < 1) return;
+
         const drawBoardStartTime = performance.now();
         const boardSize = CONFIG.BOARD_SIZE;
         const cellSize = GameState.canvasLogicalSize / boardSize;
@@ -223,44 +224,152 @@ const Renderer = {
                Camera.enabled;
     },
     
+    getBoardFrameInsets(frame) {
+        if (!frame) return { horizontal: 0, vertical: 0 };
+        const frameStyles = window.getComputedStyle(frame);
+        return {
+            horizontal:
+                parseFloat(frameStyles.paddingLeft) +
+                parseFloat(frameStyles.paddingRight) +
+                parseFloat(frameStyles.borderLeftWidth) +
+                parseFloat(frameStyles.borderRightWidth),
+            vertical:
+                parseFloat(frameStyles.paddingTop) +
+                parseFloat(frameStyles.paddingBottom) +
+                parseFloat(frameStyles.borderTopWidth) +
+                parseFloat(frameStyles.borderBottomWidth)
+        };
+    },
+
+    getMobileBoardBounds() {
+        const container = document.querySelector('.board-container');
+        if (container) {
+            const rect = container.getBoundingClientRect();
+            if (rect.width > 16 && rect.height > 16) {
+                return {
+                    width: Math.max(0, rect.width - 4),
+                    height: Math.max(0, rect.height - 4)
+                };
+            }
+        }
+
+        const vv = window.visualViewport;
+        const viewportWidth = vv?.width ?? document.documentElement.clientWidth;
+        const viewportHeight = vv?.height ?? document.documentElement.clientHeight;
+        const topBar = DOM.mobileTopBar;
+        const bottomPanel = document.querySelector('.mobile-bottom-panel');
+        const gameContainer = document.querySelector('#game-screen.active .game-container');
+
+        let top = (vv?.offsetTop ?? 0) + 8;
+        let bottom = (vv?.offsetTop ?? 0) + viewportHeight - 8;
+
+        if (topBar && window.getComputedStyle(topBar).display !== 'none') {
+            const barRect = topBar.getBoundingClientRect();
+            if (barRect.height > 0) {
+                top = barRect.bottom + 4;
+            }
+        }
+
+        if (bottomPanel && window.getComputedStyle(bottomPanel).display !== 'none') {
+            const panelRect = bottomPanel.getBoundingClientRect();
+            if (panelRect.height > 0) {
+                bottom = panelRect.top - 4;
+            }
+        }
+
+        let sidePad = 8;
+        if (gameContainer) {
+            const gcStyles = window.getComputedStyle(gameContainer);
+            sidePad += (parseFloat(gcStyles.paddingLeft) || 0) + (parseFloat(gcStyles.paddingRight) || 0);
+            top += parseFloat(gcStyles.paddingTop) || 0;
+            bottom -= parseFloat(gcStyles.paddingBottom) || 0;
+        }
+
+        return {
+            width: Math.max(0, viewportWidth - sidePad),
+            height: Math.max(0, bottom - top)
+        };
+    },
+
+    getDesktopBoardBounds(container) {
+        const paddingBuffer = 16;
+        const boardRect = container.getBoundingClientRect();
+        const gameContainer = container.closest('.game-container');
+
+        let width = boardRect.width;
+        let height = boardRect.height;
+
+        if (gameContainer) {
+            const gcRect = gameContainer.getBoundingClientRect();
+            const styles = window.getComputedStyle(gameContainer);
+            const gap = parseFloat(styles.columnGap || styles.gap) || 12;
+            const sidebar = document.getElementById('game-sidebar');
+
+            if (sidebar && window.getComputedStyle(sidebar).display !== 'none') {
+                const sidebarRect = sidebar.getBoundingClientRect();
+                width = Math.max(width, gcRect.width - sidebarRect.width - gap);
+            } else {
+                width = Math.max(width, gcRect.width);
+            }
+
+            height = Math.max(height, gcRect.height);
+            const viewportHeight = Math.max(0, window.innerHeight - gcRect.top - 16);
+            height = Math.max(height, viewportHeight);
+        }
+
+        return {
+            width: Math.max(0, width - paddingBuffer),
+            height: Math.max(0, height - paddingBuffer)
+        };
+    },
+
+    getAvailableBoardSize(container, frame) {
+        const insets = this.getBoardFrameInsets(frame);
+        const isMobile = Utils.isMobileLayout();
+
+        if (isMobile) {
+            const bounds = this.getMobileBoardBounds();
+            return {
+                width: bounds.width - insets.horizontal,
+                height: bounds.height - insets.vertical
+            };
+        }
+
+        const bounds = this.getDesktopBoardBounds(container);
+        return {
+            width: bounds.width - insets.horizontal,
+            height: bounds.height - insets.vertical
+        };
+    },
+
+    getMaxBoardCap() {
+        if (Utils.isMobileLayout()) {
+            return 800;
+        }
+        return CONFIG.MAX_BOARD_DISPLAY_SIZE || 1400;
+    },
+
     resizeCanvas() {
+        const gameScreen = document.getElementById('game-screen');
+        if (!gameScreen?.classList.contains('active')) return;
+
         const container = document.querySelector('.board-container');
         if (!container) return;
         const frame = DOM.canvas ? DOM.canvas.parentElement : null;
-        
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        if (containerWidth === 0 || containerHeight === 0) {
+
+        const { width: availableWidth, height: availableHeight } = this.getAvailableBoardSize(container, frame);
+        if (availableWidth <= 0 || availableHeight <= 0) {
             setTimeout(() => this.resizeCanvas(), 50);
             return;
         }
 
-        let frameHorizontal = 0;
-        let frameVertical = 0;
-        if (frame) {
-            const frameStyles = window.getComputedStyle(frame);
-            frameHorizontal =
-                parseFloat(frameStyles.paddingLeft) +
-                parseFloat(frameStyles.paddingRight) +
-                parseFloat(frameStyles.borderLeftWidth) +
-                parseFloat(frameStyles.borderRightWidth);
-            frameVertical =
-                parseFloat(frameStyles.paddingTop) +
-                parseFloat(frameStyles.paddingBottom) +
-                parseFloat(frameStyles.borderTopWidth) +
-                parseFloat(frameStyles.borderBottomWidth);
+        const maxSize = Math.min(availableWidth, availableHeight, this.getMaxBoardCap());
+
+        if (!Number.isFinite(maxSize) || maxSize < 1) {
+            setTimeout(() => this.resizeCanvas(), 50);
+            return;
         }
-        
-        const isMobile = window.innerWidth <= 768;
-        const paddingBuffer = isMobile ? 0 : 16;
-        const maxSize = Math.max(
-            0,
-            Math.min(
-                containerWidth - paddingBuffer - frameHorizontal,
-                containerHeight - paddingBuffer - frameVertical,
-                800
-            )
-        );
+
         GameState.canvasLogicalSize = maxSize;
         
         const dpr = window.devicePixelRatio || 1;

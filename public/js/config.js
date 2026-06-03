@@ -2,6 +2,8 @@
 const CONFIG = {
     BOARD_SIZE: 10,
     CANVAS_LOGICAL_SIZE: 800,
+    /** Upper bound for on-screen board (desktop can grow beyond legacy 800) */
+    MAX_BOARD_DISPLAY_SIZE: 1400,
     
     // Camera settings
     CAMERA: {
