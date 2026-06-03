@@ -1,221 +1,249 @@
 // Drawing functions for game elements
 const Draw = {
+    _snakeCurve(fromPos, toPos) {
+        const dx = toPos.x - fromPos.x;
+        const dy = toPos.y - fromPos.y;
+        const length = Math.sqrt(dx * dx + dy * dy) || 1;
+        const midX = (fromPos.x + toPos.x) / 2;
+        const midY = (fromPos.y + toPos.y) / 2;
+        const perpX = -dy / length;
+        const perpY = dx / length;
+        const curveAmount = length * 0.22;
+        return {
+            length,
+            control: {
+                x: midX + perpX * curveAmount,
+                y: midY + perpY * curveAmount
+            }
+        };
+    },
+
+    _quadraticPath(ctx, from, control, to) {
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.quadraticCurveTo(control.x, control.y, to.x, to.y);
+    },
+
+    _drawSnakeHead(ctx, bodyStart, bodyAngle, cellSize) {
+        const headLen = cellSize * 0.38;
+        const headW = cellSize * 0.3;
+        const outline = Math.max(1.5, cellSize * 0.03);
+        // Back of head shape (neck) — aligned to where the body curve begins
+        const neckLocalX = -headLen * 0.35;
+        const rot = bodyAngle + Math.PI;
+        const hx = bodyStart.x - neckLocalX * Math.cos(rot);
+        const hy = bodyStart.y - neckLocalX * Math.sin(rot);
+
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.rotate(rot);
+
+        const drawHeadShape = () => {
+            ctx.beginPath();
+            ctx.moveTo(headLen * 0.55, 0);
+            ctx.quadraticCurveTo(headLen * 0.15, -headW * 0.55, -headLen * 0.35, -headW * 0.42);
+            ctx.quadraticCurveTo(-headLen * 0.08, 0, -headLen * 0.35, headW * 0.42);
+            ctx.quadraticCurveTo(headLen * 0.15, headW * 0.55, headLen * 0.55, 0);
+            ctx.closePath();
+        };
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        ctx.translate(2, 2);
+        drawHeadShape();
+        ctx.fill();
+        ctx.translate(-2, -2);
+
+        const headGrad = ctx.createLinearGradient(-headLen * 0.3, 0, headLen * 0.5, 0);
+        headGrad.addColorStop(0, '#6d2828');
+        headGrad.addColorStop(0.5, '#a83c3c');
+        headGrad.addColorStop(1, '#c24a4a');
+        ctx.fillStyle = headGrad;
+        drawHeadShape();
+        ctx.fill();
+
+        ctx.strokeStyle = '#2d1212';
+        ctx.lineWidth = outline;
+        ctx.lineJoin = 'round';
+        drawHeadShape();
+        ctx.stroke();
+
+        const eyeX = headLen * 0.08;
+        const eyeY = headW * 0.22;
+        const eyeR = cellSize * 0.055;
+        const pupilR = cellSize * 0.028;
+
+        ctx.fillStyle = '#fff8ee';
+        ctx.beginPath();
+        ctx.arc(eyeX, -eyeY, eyeR, 0, Math.PI * 2);
+        ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath();
+        ctx.arc(eyeX + eyeR * 0.25, -eyeY, pupilR, 0, Math.PI * 2);
+        ctx.arc(eyeX + eyeR * 0.25, eyeY, pupilR, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#e85a5a';
+        ctx.lineWidth = Math.max(1.5, cellSize * 0.022);
+        ctx.lineCap = 'round';
+        const tongueBase = headLen * 0.52;
+        const tongueLen = cellSize * 0.14;
+        ctx.beginPath();
+        ctx.moveTo(tongueBase, 0);
+        ctx.lineTo(tongueBase + tongueLen, 0);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(tongueBase + tongueLen, 0);
+        ctx.lineTo(tongueBase + tongueLen * 1.15, -tongueLen * 0.45);
+        ctx.moveTo(tongueBase + tongueLen, 0);
+        ctx.lineTo(tongueBase + tongueLen * 1.15, tongueLen * 0.45);
+        ctx.stroke();
+
+        ctx.restore();
+    },
+
     snakes(snakes, opacities = {}) {
         const cellSize = GameState.canvasLogicalSize / CONFIG.BOARD_SIZE;
         const ctx = DOM.ctx;
-        
+
         Object.entries(snakes).forEach(([from, to]) => {
             const opacity = opacities[from] !== undefined ? opacities[from] : 1.0;
+            ctx.save();
             ctx.globalAlpha = opacity;
+
             const fromPos = Utils.getPosition(parseInt(from));
             const toPos = Utils.getPosition(parseInt(to));
-            
-            const dx = toPos.x - fromPos.x;
-            const dy = toPos.y - fromPos.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            
-            const midX = (fromPos.x + toPos.x) / 2;
-            const midY = (fromPos.y + toPos.y) / 2;
-            const perpX = -dy / length;
-            const perpY = dx / length;
-            const curveAmount = length * 0.2;
-            const controlX = midX + perpX * curveAmount;
-            const controlY = midY + perpY * curveAmount;
-            
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-            ctx.shadowBlur = 12;
-            ctx.shadowOffsetX = 3;
-            ctx.shadowOffsetY = 3;
-            
-            const gradient = ctx.createLinearGradient(fromPos.x, fromPos.y, toPos.x, toPos.y);
-            gradient.addColorStop(0, '#86efac');
-            gradient.addColorStop(0.5, '#4ade80');
-            gradient.addColorStop(1, '#22c55e');
-            
-            ctx.strokeStyle = gradient;
-            ctx.lineWidth = cellSize * 0.2;
+            const { control } = Draw._snakeCurve(fromPos, toPos);
+
+            const bodyAngle = Math.atan2(control.y - fromPos.y, control.x - fromPos.x);
+            const headLen = cellSize * 0.38;
+            const neckLocalX = -headLen * 0.35;
+            const bodyStart = {
+                x: fromPos.x - neckLocalX * Math.cos(bodyAngle),
+                y: fromPos.y - neckLocalX * Math.sin(bodyAngle)
+            };
+
+            const outlineW = cellSize * 0.22;
+            const bodyW = cellSize * 0.155;
+            const glossW = cellSize * 0.05;
+
+            // Shadow
+            ctx.save();
+            ctx.translate(2, 3);
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
+            ctx.lineWidth = outlineW;
             ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
-            ctx.beginPath();
-            ctx.moveTo(fromPos.x, fromPos.y);
-            ctx.quadraticCurveTo(controlX, controlY, toPos.x, toPos.y);
+            Draw._quadraticPath(ctx, bodyStart, control, toPos);
             ctx.stroke();
-            
-            ctx.strokeStyle = '#16a34a';
-            ctx.lineWidth = cellSize * 0.18;
-            ctx.setLineDash([cellSize * 0.15, cellSize * 0.15]);
-            ctx.beginPath();
-            ctx.moveTo(fromPos.x, fromPos.y);
-            ctx.quadraticCurveTo(controlX, controlY, toPos.x, toPos.y);
+            ctx.restore();
+
+            // Dark outline
+            ctx.strokeStyle = '#2d1212';
+            ctx.lineWidth = outlineW;
+            ctx.lineCap = 'round';
+            Draw._quadraticPath(ctx, bodyStart, control, toPos);
+            ctx.stroke();
+
+            // Body — smooth ribbon
+            const bodyGrad = ctx.createLinearGradient(bodyStart.x, bodyStart.y, toPos.x, toPos.y);
+            bodyGrad.addColorStop(0, '#b84a4a');
+            bodyGrad.addColorStop(0.45, '#9a3838');
+            bodyGrad.addColorStop(1, '#6d2828');
+            ctx.strokeStyle = bodyGrad;
+            ctx.lineWidth = bodyW;
+            Draw._quadraticPath(ctx, bodyStart, control, toPos);
+            ctx.stroke();
+
+            // Light edge
+            ctx.strokeStyle = 'rgba(255, 220, 210, 0.35)';
+            ctx.lineWidth = glossW;
+            Draw._quadraticPath(ctx, bodyStart, control, toPos);
+            ctx.stroke();
+
+            // Subtle belly stripe
+            ctx.setLineDash([cellSize * 0.12, cellSize * 0.18]);
+            ctx.strokeStyle = 'rgba(45, 15, 15, 0.35)';
+            ctx.lineWidth = cellSize * 0.04;
+            Draw._quadraticPath(ctx, bodyStart, control, toPos);
             ctx.stroke();
             ctx.setLineDash([]);
-            
-            const startDx = controlX - fromPos.x;
-            const startDy = controlY - fromPos.y;
-            const headAngle = Math.atan2(startDy, startDx) + Math.PI;
-            
-            ctx.save();
-            ctx.translate(fromPos.x, fromPos.y);
-            ctx.rotate(headAngle);
-            
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-            ctx.shadowBlur = 10;
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-            
-            const headWidth = cellSize * 0.25;
-            const headHeight = cellSize * 0.2;
-            
-            ctx.fillStyle = '#22c55e';
-            ctx.beginPath();
-            ctx.ellipse(0, 0, headWidth, headHeight, 0, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.strokeStyle = '#16a34a';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
-            
-            const eyeOffsetX = headWidth * 0.3;
-            const eyeOffsetY = headHeight * 0.4;
-            const eyeRadius = headWidth * 0.15;
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(eyeOffsetX, -eyeOffsetY, eyeRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            ctx.fillStyle = '#000000';
-            ctx.beginPath();
-            ctx.arc(eyeOffsetX, -eyeOffsetY, eyeRadius * 0.5, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(eyeOffsetX, eyeOffsetY, eyeRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            ctx.fillStyle = '#000000';
-            ctx.beginPath();
-            ctx.arc(eyeOffsetX, eyeOffsetY, eyeRadius * 0.5, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 2;
-            ctx.lineCap = 'round';
-            
-            const tongueLength = headWidth * 0.6;
-            const tongueX = headWidth;
-            
-            ctx.beginPath();
-            ctx.moveTo(headWidth * 0.8, 0);
-            ctx.lineTo(tongueX + tongueLength * 0.7, 0);
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.moveTo(tongueX + tongueLength * 0.7, 0);
-            ctx.lineTo(tongueX + tongueLength, -tongueLength * 0.3);
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.moveTo(tongueX + tongueLength * 0.7, 0);
-            ctx.lineTo(tongueX + tongueLength, tongueLength * 0.3);
-            ctx.stroke();
-            
+
+            Draw._drawSnakeHead(ctx, bodyStart, bodyAngle, cellSize);
             ctx.restore();
-            
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
-            ctx.lineCap = 'butt';
-            ctx.globalAlpha = 1.0;
         });
     },
-    
+
     ladders(ladders, opacities = {}) {
         const cellSize = GameState.canvasLogicalSize / CONFIG.BOARD_SIZE;
         const ctx = DOM.ctx;
-        
+
         Object.entries(ladders).forEach(([from, to]) => {
             const opacity = opacities[from] !== undefined ? opacities[from] : 1.0;
+            ctx.save();
             ctx.globalAlpha = opacity;
+
             const fromPos = Utils.getPosition(parseInt(from));
             const toPos = Utils.getPosition(parseInt(to));
-            
             const dx = toPos.x - fromPos.x;
             const dy = toPos.y - fromPos.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
+            const length = Math.sqrt(dx * dx + dy * dy) || 1;
             const angle = Math.atan2(dy, dx);
-            
-            const railWidth = cellSize * 0.15;
-            
-            const perpX = Math.cos(angle + Math.PI / 2) * railWidth;
-            const perpY = Math.sin(angle + Math.PI / 2) * railWidth;
-            
-            const rail1Start = { x: fromPos.x - perpX, y: fromPos.y - perpY };
-            const rail1End = { x: toPos.x - perpX, y: toPos.y - perpY };
-            
-            const rail2Start = { x: fromPos.x + perpX, y: fromPos.y + perpY };
-            const rail2End = { x: toPos.x + perpX, y: toPos.y + perpY };
-            
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.lineWidth = 8;
-            ctx.beginPath();
-            ctx.moveTo(rail1Start.x + 2, rail1Start.y + 2);
-            ctx.lineTo(rail1End.x + 2, rail1End.y + 2);
-            ctx.moveTo(rail2Start.x + 2, rail2Start.y + 2);
-            ctx.lineTo(rail2End.x + 2, rail2End.y + 2);
-            ctx.stroke();
-            
-            const gradient = ctx.createLinearGradient(fromPos.x, fromPos.y, toPos.x, toPos.y);
-            gradient.addColorStop(0, '#8b5a2b');
-            gradient.addColorStop(1, '#6b4423');
-            ctx.strokeStyle = gradient;
-            ctx.lineWidth = 6;
-            ctx.lineCap = 'round';
-            
-            ctx.beginPath();
-            ctx.moveTo(rail1Start.x, rail1Start.y);
-            ctx.lineTo(rail1End.x, rail1End.y);
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.moveTo(rail2Start.x, rail2Start.y);
-            ctx.lineTo(rail2End.x, rail2End.y);
-            ctx.stroke();
-            
-            const numRungs = Math.max(3, Math.floor(length / (cellSize * 0.4)));
-            ctx.strokeStyle = '#8b5a2b';
-            ctx.lineWidth = 4;
-            
-            for (let i = 1; i < numRungs; i++) {
-                const t = i / numRungs;
-                const rung1X = rail1Start.x + (rail1End.x - rail1Start.x) * t;
-                const rung1Y = rail1Start.y + (rail1End.y - rail1Start.y) * t;
-                const rung2X = rail2Start.x + (rail2End.x - rail2Start.x) * t;
-                const rung2Y = rail2Start.y + (rail2End.y - rail2Start.y) * t;
-                
+            const spread = cellSize * 0.11;
+
+            const px = Math.cos(angle + Math.PI / 2) * spread;
+            const py = Math.sin(angle + Math.PI / 2) * spread;
+
+            const r1a = { x: fromPos.x - px, y: fromPos.y - py };
+            const r1b = { x: toPos.x - px, y: toPos.y - py };
+            const r2a = { x: fromPos.x + px, y: fromPos.y + py };
+            const r2b = { x: toPos.x + px, y: toPos.y + py };
+
+            const railW = Math.max(3, cellSize * 0.065);
+            const rungW = Math.max(2.5, cellSize * 0.045);
+            const shadowOff = 2;
+
+            const strokeLine = (a, b, w, color, ox, oy) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = w;
+                ctx.lineCap = 'square';
                 ctx.beginPath();
-                ctx.moveTo(rung1X, rung1Y);
-                ctx.lineTo(rung2X, rung2Y);
+                ctx.moveTo(a.x + ox, a.y + oy);
+                ctx.lineTo(b.x + ox, b.y + oy);
                 ctx.stroke();
+            };
+
+            // Shadow
+            strokeLine(r1a, r1b, railW, 'rgba(0,0,0,0.2)', shadowOff, shadowOff);
+            strokeLine(r2a, r2b, railW, 'rgba(0,0,0,0.2)', shadowOff, shadowOff);
+
+            // Rails
+            strokeLine(r1a, r1b, railW, '#6b4a28', 0, 0);
+            strokeLine(r2a, r2b, railW, '#6b4a28', 0, 0);
+            strokeLine(r1a, r1b, railW * 0.35, 'rgba(255,255,255,0.12)', -px * 0.08, -py * 0.08);
+
+            const numRungs = Math.max(4, Math.floor(length / (cellSize * 0.42)));
+            for (let i = 1; i <= numRungs; i++) {
+                const t = i / (numRungs + 1);
+                const x1 = r1a.x + (r1b.x - r1a.x) * t;
+                const y1 = r1a.y + (r1b.y - r1a.y) * t;
+                const x2 = r2a.x + (r2b.x - r2a.x) * t;
+                const y2 = r2a.y + (r2b.y - r2a.y) * t;
+                const thick = i === numRungs ? rungW * 1.35 : rungW;
+                strokeLine({ x: x1, y: y1 }, { x: x2, y: y2 }, thick, '#4a3218', shadowOff, shadowOff);
+                strokeLine({ x: x1, y: y1 }, { x: x2, y: y2 }, thick, '#8f6538', 0, 0);
             }
-            
-            ctx.lineWidth = 1;
-            ctx.lineCap = 'butt';
-            ctx.globalAlpha = 1.0;
+
+            // Small markers at bottom (start) of climb
+            const dotR = cellSize * 0.04;
+            [r1a, r2a].forEach((p) => {
+                ctx.fillStyle = '#5c4018';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            ctx.restore();
         });
     },
     
@@ -280,19 +308,11 @@ const Draw = {
             const y = row * cellSize;
             
             ctx.save();
-            ctx.fillStyle = '#000000';
+            ctx.fillStyle = '#121a18';
             ctx.fillRect(x, y, cellSize, cellSize);
-
-            const voidBorderWidth = 2;
-            ctx.strokeStyle = '#333333';
-            ctx.lineWidth = voidBorderWidth;
-            ctx.strokeRect(
-                x + voidBorderWidth / 2,
-                y + voidBorderWidth / 2,
-                cellSize - voidBorderWidth,
-                cellSize - voidBorderWidth
-            );
-
+            ctx.strokeStyle = '#2a3d36';
+            ctx.lineWidth = Math.max(1, cellSize * 0.02);
+            ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
             ctx.restore();
         });
     },

@@ -30,47 +30,21 @@ const Renderer = {
         ctx.save();
         Camera.apply(ctx);
         
-        for (let row = 0; row < boardSize; row++) {
-            for (let col = 0; col < boardSize; col++) {
-                const num = Utils.getCellNumber(row, col);
-                const x = col * cellSize;
-                const y = row * cellSize;
-                
-                const isLight = (row + col) % 2 === 0;
-                
-                if (isLight) {
-                    ctx.fillStyle = '#334155';
-                } else {
-                    ctx.fillStyle = '#1e293b';
-                }
-                
-                ctx.fillRect(x, y, cellSize, cellSize);
-                
-                if (num === 100) {
-                    ctx.fillStyle = 'rgba(240, 147, 251, 0.2)';
+        if (typeof BoardDraw !== 'undefined') {
+            BoardDraw.draw(ctx, boardSize, cellSize);
+        } else {
+            for (let row = 0; row < boardSize; row++) {
+                for (let col = 0; col < boardSize; col++) {
+                    const num = Utils.getCellNumber(row, col);
+                    const x = col * cellSize;
+                    const y = row * cellSize;
+                    ctx.fillStyle = (row + col) % 2 === 0 ? '#334155' : '#1e293b';
                     ctx.fillRect(x, y, cellSize, cellSize);
-                }
-                
-                const cellBorderWidth = 1.5;
-                ctx.strokeStyle = '#475569';
-                ctx.lineWidth = cellBorderWidth;
-                // Inset border so strokes at board edges are not clipped by canvas bounds.
-                ctx.strokeRect(
-                    x + cellBorderWidth / 2,
-                    y + cellBorderWidth / 2,
-                    cellSize - cellBorderWidth,
-                    cellSize - cellBorderWidth
-                );
-                
-                ctx.fillStyle = num === 100 ? '#f093fb' : '#cbd5e1';
-                ctx.font = `bold ${cellSize * 0.25}px Arial`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(num, x + cellSize / 2, y + cellSize * 0.25);
-                
-                if (num === 100) {
-                    ctx.font = `${cellSize * 0.35}px Arial`;
-                    ctx.fillText('🏆', x + cellSize / 2, y + cellSize * 0.6);
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.font = `bold ${cellSize * 0.25}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(num, x + cellSize / 2, y + cellSize / 2);
                 }
             }
         }
