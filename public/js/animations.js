@@ -1,287 +1,140 @@
-// Animation system
+// Cancellable animations. A reset, disconnect or newer turn invalidates every callback.
 const Animations = {
-    animatePlayerPosition(playerId, fromPos, toPos, duration, onComplete) {
-        const startTime = Date.now();
+    generation: 0,
+    timers: new Set(),
+
+    cancel() {
+        this.generation++;
+        for (const timer of this.timers) clearTimeout(timer);
+        this.timers.clear();
+        GameState.playerAnimations = {};
+        GameState.animationInProgress = false;
+        GameState.diceAnimationInProgress = false;
+        GameState.turnResolutionInProgress = false;
+        GameState.pendingTurnAnimationCompletion = null;
+        GameState.pendingMinePosition = null;
+        GameState.explosionAnimations = [];
+        DOM.diceBackdrop.classList.remove('active');
+        DOM.diceContainer.classList.remove('rolling');
+        Renderer.stopRenderLoop();
+    },
+
+    delay(callback, ms) {
+        const generation = this.generation;
+        const timer = setTimeout(() => {
+            this.timers.delete(timer);
+            if (generation === this.generation) callback();
+        }, ms);
+        this.timers.add(timer);
+    },
+
+    animatePlayerPosition(playerId, from, to, duration, onComplete, snake = false) {
+        const generation = this.generation;
+        const start = performance.now();
+        const fromPoint = Utils.getPosition(from);
+        const toPoint = Utils.getPosition(to);
+        const control = snake ? Utils.getSnakeControlPoint(fromPoint, toPoint) : null;
         Renderer.startRenderLoop();
-
-        function animate() {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const easedProgress = Utils.easeInOutQuad(progress);
-
+        const frame = now => {
+            if (generation !== this.generation) return;
+            const progress = Math.min((now - start) / duration, 1);
+            const eased = Utils.easeInOutQuad(progress);
             GameState.playerAnimations[playerId] = {
-                from: fromPos,
-                to: toPos,
-                progress: easedProgress,
-                locked: true
+                from, to, progress: eased, locked: true,
+                isFollowingSnake: snake,
+                currentBezierPos: snake ? Utils.getPointOnBezierCurve(fromPoint, control, toPoint, eased) : null
             };
-
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                if (onComplete) onComplete();
-            }
-        }
-
-        animate();
+            if (progress < 1) requestAnimationFrame(frame);
+            else if (onComplete) onComplete();
+        };
+        requestAnimationFrame(frame);
     },
-    
-    animatePlayerAlongSnake(playerId, fromPos, toPos, duration, onComplete) {
-        const startTime = Date.now();
-        const controlPos = Utils.getSnakeControlPoint(fromPos, toPos);
 
-        function animate() {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const easedProgress = Utils.easeInOutQuad(progress);
-
-            const currentPos = Utils.getPointOnBezierCurve(fromPos, controlPos, toPos, easedProgress);
-
-            if (!isFinite(currentPos.x) || !isFinite(currentPos.y)) {
-                console.warn('Invalid Bézier curve position calculated, falling back to linear interpolation');
-                const fallbackPos = {
-                    x: fromPos.x + (toPos.x - fromPos.x) * easedProgress,
-                    y: fromPos.y + (toPos.y - fromPos.y) * easedProgress
-                };
-                currentPos.x = fallbackPos.x;
-                currentPos.y = fallbackPos.y;
-            }
-
-            GameState.playerAnimations[playerId] = {
-                from: fromPos,
-                to: toPos,
-                progress: easedProgress,
-                locked: true,
-                currentBezierPos: currentPos,
-                isFollowingSnake: true,
-                controlPos: controlPos
-            };
-
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                if (GameState.playerAnimations[playerId]) {
-                    GameState.playerAnimations[playerId].isFollowingSnake = false;
-                    GameState.playerAnimations[playerId].currentBezierPos = null;
-                    GameState.playerAnimations[playerId].controlPos = null;
-                }
-                if (onComplete) onComplete();
-            }
-        }
-
-        animate();
-    },
-    
-    animatePlayerMovement(playerId, startPos, endPos, diceRoll, snakeOrLadder, snake, ladder, movementSound, onComplete) {
-        const animationStartTime = performance.now();
+    animateMove(result, onComplete) {
         GameState.animationInProgress = true;
-
-        const selectedMovementSound = movementSound || AudioSystem.selectRandom('playerMove', 'playerMove2', 0.7);
-        let lastSoundTime = 0;
-        const soundInterval = CONFIG.ANIMATION.SOUND_INTERVAL;
-
-        const steps = [];
-        for (let i = 1; i <= diceRoll; i++) {
-            steps.push(startPos + i);
-        }
-
-        const stepDuration = Math.max(
-            200,
-            CONFIG.ANIMATION.STEP_DURATION_BASE - (diceRoll * CONFIG.ANIMATION.STEP_DURATION_REDUCTION)
-        );
-        let expectedAnimationTime = steps.length * stepDuration;
-        if (snakeOrLadder) {
-            expectedAnimationTime += CONFIG.ANIMATION.TRANSITION_DELAY;
-            if (snake) {
-                expectedAnimationTime += CONFIG.ANIMATION.SNAKE_DURATION;
-            } else if (ladder) {
-                expectedAnimationTime += CONFIG.ANIMATION.LADDER_DURATION;
-            }
-        }
-
-        function animateStep(stepIndex) {
-            if (stepIndex >= steps.length) {
-                if (snakeOrLadder) {
-                    setTimeout(() => {
-                        if (snake) {
-                            AudioSystem.play('downSnake');
-                        } else if (ladder) {
-                            AudioSystem.play('climbLadder');
-                        }
-
-                        if (snake) {
-                            const fromPos = Utils.getPosition(steps[steps.length - 1]);
-                            const toPos = Utils.getPosition(endPos);
-                            Animations.animatePlayerAlongSnake(
-                                playerId,
-                                fromPos,
-                                toPos,
-                                CONFIG.ANIMATION.SNAKE_DURATION,
-                                () => {
-                                    GameState.animationInProgress = false;
-                                    
-                                    const totalAnimationTime = performance.now() - animationStartTime;
-                                    if (totalAnimationTime > expectedAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
-                                        console.warn(`🐍 Slow snake animation: ${totalAnimationTime.toFixed(2)}ms`);
-                                    }
-                                    
-                                    if (onComplete) onComplete();
-                                }
-                            );
-                        } else if (ladder) {
-                            const ladderStart = ladder.from;
-                            const ladderEnd = ladder.to;
-
-                            Animations.animatePlayerPosition(
-                                playerId,
-                                ladderStart,
-                                ladderEnd,
-                                CONFIG.ANIMATION.LADDER_DURATION,
-                                () => {
-                                    GameState.animationInProgress = false;
-
-                                    GameState.socket.emit('ladder-animation-complete', {
-                                        roomId: GameState.currentRoom,
-                                        playerId: playerId,
-                                        ladderEnd: ladderEnd
-                                    });
-                                    
-                                    const totalAnimationTime = performance.now() - animationStartTime;
-                                    if (totalAnimationTime > expectedAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
-                                        console.warn(`🪜 Slow ladder animation: ${totalAnimationTime.toFixed(2)}ms`);
-                                    }
-
-                                    if (onComplete) onComplete();
-                                }
-                            );
-                        }
-                    }, CONFIG.ANIMATION.TRANSITION_DELAY);
-                } else {
-                    GameState.animationInProgress = false;
-                    
-                    const totalAnimationTime = performance.now() - animationStartTime;
-                    if (totalAnimationTime > expectedAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
-                        console.warn(`🎬 Slow player movement animation: ${totalAnimationTime.toFixed(2)}ms for ${diceRoll} steps`);
-                    }
-                    
-                    if (onComplete) onComplete();
-                }
+        const playerId = result.player.persistentId;
+        const path = result.movementPath || [];
+        const duration = Math.max(200, CONFIG.ANIMATION.STEP_DURATION_BASE - path.length * CONFIG.ANIMATION.STEP_DURATION_REDUCTION);
+        const sound = AudioSystem.selectBySeed('playerMove', 'playerMove2', String(result.turnId), 0.7);
+        const finish = () => {
+            GameState.animationInProgress = false;
+            delete GameState.playerAnimations[playerId];
+            onComplete();
+        };
+        const hazard = () => {
+            if (result.mine) {
+                GameState.pendingMinePosition = null;
+                AudioSystem.play('mineExplosion');
+                Explosions.create(result.mine.position);
+                this.animatePlayerPosition(playerId, result.mine.position, 1, 650, () => this.delay(finish, 850));
+            } else if (result.voidFall) {
+                AudioSystem.play('downSnake');
+                this.animatePlayerPosition(playerId, result.voidFall.from, result.voidFall.to, 750, finish);
+            } else if (result.snake) {
+                AudioSystem.play('downSnake');
+                this.animatePlayerPosition(playerId, result.snake.from, result.snake.to, CONFIG.ANIMATION.SNAKE_DURATION, finish, true);
+            } else finish();
+        };
+        const transition = () => {
+            if (result.ladder) {
+                AudioSystem.play('climbLadder');
+                this.animatePlayerPosition(playerId, result.ladder.from, result.ladder.to, CONFIG.ANIMATION.LADDER_DURATION, hazard);
+            } else hazard();
+        };
+        const step = index => {
+            if (index >= path.length) {
+                if (result.snake || result.ladder || result.mine || result.voidFall) this.delay(transition, CONFIG.ANIMATION.TRANSITION_DELAY);
+                else finish();
                 return;
             }
-
-            const targetPos = steps[stepIndex];
-            const duration = stepDuration;
-            const fromPos = stepIndex === 0 ? startPos : steps[stepIndex - 1];
-
-            const now = Date.now();
-            if (now - lastSoundTime >= soundInterval) {
-                try {
-                    AudioSystem.play(selectedMovementSound);
-                    lastSoundTime = now;
-                } catch (error) {
-                    console.warn('Sound playback failed during movement:', error);
-                }
-            } else if (stepIndex === 0 || stepIndex === steps.length - 1) {
-                try {
-                    AudioSystem.play(selectedMovementSound, 0.7);
-                } catch (error) {
-                    console.warn('Fallback sound failed:', error);
-                }
-            }
-
-            Animations.animatePlayerPosition(playerId, fromPos, targetPos, duration, () => {
-                animateStep(stepIndex + 1);
-            });
-        }
-
-        animateStep(0);
+            AudioSystem.play(sound);
+            this.animatePlayerPosition(playerId, index ? path[index - 1] : result.oldPosition, path[index], duration, () => step(index + 1));
+        };
+        step(0);
     },
-    
-    animateDiceRoll(diceValues, callback, options = {}) {
-        const diceAnimationStartTime = performance.now();
-        const playerName = options.playerName || '';
-        
-        const valuesArray = Array.isArray(diceValues) ? diceValues : [diceValues];
-        
-        DOM.diceContainer.innerHTML = '';
 
-        if (playerName) {
+    animateDiceRoll(values, callback, options = {}) {
+        const diceValues = Array.isArray(values) ? values : [values];
+        DOM.diceContainer.replaceChildren();
+        if (options.playerName) {
             const label = document.createElement('div');
             label.className = 'dice-roll-label';
-            label.textContent = `${playerName} is rolling`;
+            label.textContent = `${options.playerName} is rolling`;
             DOM.diceContainer.appendChild(label);
         }
-        
-        const diceElements = [];
-        valuesArray.forEach((val, index) => {
-            const diceDiv = document.createElement('div');
-            diceDiv.className = 'dice';
-            diceDiv.id = `dice-${index}`;
-            
+        const dice = diceValues.map(() => {
+            const element = document.createElement('div');
+            element.className = 'dice rolling';
             for (let i = 0; i < 9; i++) {
                 const dot = document.createElement('div');
                 dot.className = 'dice-dot';
-                diceDiv.appendChild(dot);
+                element.appendChild(dot);
             }
-            
-            DOM.diceContainer.appendChild(diceDiv);
-            diceElements.push(diceDiv);
+            DOM.diceContainer.appendChild(element);
+            return element;
         });
-        
-        const diceRollSound = AudioSystem.selectRandom('diceRoll', 'diceRoll2', 0.7);
-        const soundStartTime = performance.now();
-        AudioSystem.play(diceRollSound);
-        const soundTime = performance.now() - soundStartTime;
-        if (soundTime > 10) {
-            console.warn(`🎲 Slow dice sound: ${soundTime.toFixed(2)}ms`);
-        }
-        
+        AudioSystem.play(AudioSystem.selectRandom('diceRoll', 'diceRoll2', 0.7));
         DOM.diceBackdrop.classList.add('active');
         DOM.diceContainer.classList.add('rolling');
-        
-        diceElements.forEach(dice => dice.classList.add('rolling'));
-
-        let counter = 0;
-        const totalFrames = CONFIG.ANIMATION.DICE_FRAMES;
-        const frameDelay = CONFIG.ANIMATION.DICE_FRAME_DELAY;
-        const resultHold = CONFIG.ANIMATION.DICE_RESULT_HOLD || 550;
-        const expectedDiceAnimationTime = (totalFrames * frameDelay) + resultHold + 150;
-        
-        const interval = setInterval(() => {
-            diceElements.forEach(dice => {
-                const randomNum = Math.floor(Math.random() * 6) + 1;
-                this.setDiceFace(dice, randomNum);
-            });
-            counter++;
-            
-            if (counter >= totalFrames) {
-                clearInterval(interval);
-                
-                diceElements.forEach((dice, index) => {
-                    this.setDiceFace(dice, valuesArray[index]);
-                });
-                
-                setTimeout(() => {
-                    diceElements.forEach(dice => dice.classList.remove('rolling'));
-                    
-                    setTimeout(() => {
-                        DOM.diceContainer.classList.remove('rolling');
-                        DOM.diceBackdrop.classList.remove('active');
-
-                        if (callback) callback();
-
-                        const totalDiceAnimationTime = performance.now() - diceAnimationStartTime;
-                        if (totalDiceAnimationTime > expectedDiceAnimationTime + CONFIG.ANIMATION.SLOW_WARNING_BUFFER) {
-                            console.warn(`🎲 Slow dice animation: ${totalDiceAnimationTime.toFixed(2)}ms`);
-                        }
-                    }, 150);
-                }, resultHold);
+        let frames = 0;
+        const tick = () => {
+            dice.forEach(element => this.setDiceFace(element, Math.floor(Math.random() * 6) + 1));
+            if (++frames < CONFIG.ANIMATION.DICE_FRAMES) {
+                this.delay(tick, CONFIG.ANIMATION.DICE_FRAME_DELAY);
+                return;
             }
-        }, frameDelay);
+            dice.forEach((element, i) => this.setDiceFace(element, diceValues[i]));
+            this.delay(() => {
+                DOM.diceContainer.classList.remove('rolling');
+                DOM.diceBackdrop.classList.remove('active');
+                GameState.diceAnimationInProgress = false;
+                callback();
+            }, CONFIG.ANIMATION.DICE_RESULT_HOLD);
+        };
+        tick();
     },
-    
+
     setDiceFace(element, number) {
-        element.className = 'dice';
-        element.classList.add(`dice-face-${number}`);
+        element.className = `dice dice-face-${number}`;
     }
 };

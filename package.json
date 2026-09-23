@@ -7,11 +7,11 @@
     "setup": "sh install.sh",
     "start": "node server.js",
     "dev": "node server.js",
-    "dev:live": "nodemon --watch server.js --ext js,json --signal SIGTERM server.js",
+    "dev:live": "nodemon --watch server.js --watch lib --ext js,json --signal SIGTERM server.js",
     "launch:dev": "./launch-dev.sh",
     "test": "node --test test/*.test.js",
     "test:unit": "node --test test/game-engine.test.js",
-    "test:integration": "node --test test/integration.test.js",
+    "test:integration": "node --test test/integration.test.js test/lifecycle.test.js",
     "test:watch": "node --test --watch test/*.test.js"
   },
   "keywords": [
@@ -22,6 +22,9 @@
   ],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.6.1"

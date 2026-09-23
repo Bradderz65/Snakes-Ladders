@@ -1,510 +1,205 @@
-// Socket.IO event handlers
+// Socket events synchronize authoritative state; animations only present completed moves.
 const SocketHandlers = {
+    awaitingSnapshot: false,
+    lastWinnerId: null,
+
+    leaveSession(message, clearSavedSession = true) {
+        Animations.cancel();
+        if (clearSavedSession) GameState.clearSession();
+        GameState.currentRoom = null;
+        GameState.currentPlayer = null;
+        GameState.reconnectToken = null;
+        GameState.reconnectSuppressed = !clearSavedSession;
+        GameState.gameState = null;
+        GameState.isHost = false;
+        GameState.isReconnecting = false;
+        GameState.lastRoomPeek = null;
+        this.awaitingSnapshot = false;
+        this.lastWinnerId = null;
+        DOM.winnerModal.classList.remove('active');
+        DOM.diceControlModal.classList.remove('active');
+        UI.updateTakenCustomizations({ colors: [], icons: [] });
+        UI.switchScreen('welcome');
+        if (message) UI.showNotification(message, 'info');
+    },
+
     init(socket) {
         GameState.socket = socket;
-        
-        socket.on('room-created', ({ roomId, player, discoverable, isHost }) => {
+        const acceptSession = (event, message) => socket.on(event, ({ roomId, player, reconnectToken, isHost }) => {
+            Animations.cancel();
             GameState.currentRoom = roomId;
             GameState.currentPlayer = player;
+            GameState.reconnectToken = reconnectToken;
+            GameState.reconnectSuppressed = false;
             GameState.isHost = !!isHost;
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            DOM.roomCodeDisplay.textContent = roomId;
-            GameState.saveSession();
-            UI.switchScreen('lobby');
-
-            if (discoverable) {
-                UI.showNotification('Room created and discoverable on local network!', 'success');
-            } else {
-                UI.showNotification('Room created successfully!', 'success');
-            }
-        });
-
-        socket.on('room-joined', ({ roomId, player, isHost }) => {
-            GameState.currentRoom = roomId;
-            GameState.currentPlayer = player;
-            GameState.isHost = !!isHost;
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            DOM.roomCodeDisplay.textContent = roomId;
-            GameState.saveSession();
-            UI.switchScreen('lobby');
-            UI.showNotification('Joined room successfully!', 'success');
-        });
-
-        socket.on('reconnected', ({ roomId, player, isHost }) => {
-            GameState.currentRoom = roomId;
-            GameState.currentPlayer = player;
-            GameState.isHost = !!isHost;
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            DOM.roomCodeDisplay.textContent = roomId;
             GameState.isReconnecting = false;
             GameState.saveSession();
-            UI.showNotification('Reconnected successfully!', 'success');
-            
-            setTimeout(() => {
-                if (GameState.gameState) {
-                    if (GameState.gameState.started) {
-                        UI.switchScreen('game');
-                    } else {
-                        UI.switchScreen('lobby');
-                    }
-                } else {
-                    UI.switchScreen('lobby');
+            DOM.roomCodeDisplay.textContent = roomId;
+            this.awaitingSnapshot = true;
+            UI.showNotification(message, 'success');
+            // Remove consumed invite parameters so refresh only restores the session.
+            history.replaceState(null, '', window.location.pathname);
+        });
+        acceptSession('room-created', 'Room created. Share the code or invite link with friends.');
+        acceptSession('room-joined', 'Joined room successfully!');
+        acceptSession('reconnected', 'Reconnected successfully!');
+
+        socket.on('connect', () => {
+            UI.updateConnectionStatus('connected', 'Connected');
+            const session = GameState.reconnectSuppressed ? null : GameState.currentRoom && GameState.reconnectToken ? {
+                roomId: GameState.currentRoom, persistentId: GameState.currentPlayer.persistentId,
+                reconnectToken: GameState.reconnectToken
+            } : GameState.loadSession();
+            if (session) {
+                GameState.isReconnecting = true;
+                socket.emit('reconnect-to-room', session);
+            } else {
+                GameState.isReconnecting = false;
+                socket.emit('discover-games');
+                const invite = Utils.getUrlParameters();
+                if (invite.room && /^[a-z0-9]{6}$/i.test(invite.room)) {
+                    GameState.currentMode = 'join';
+                    UI.showSetupScreen('join');
+                    DOM.roomCodeInput.value = invite.room.toUpperCase();
+                    socket.emit('peek-room', { roomId: invite.room });
                 }
-            }, 100);
-        });
-
-        socket.on('kicked-from-room', () => {
-            GameState.clearSession();
-            GameState.currentRoom = null;
-            GameState.currentPlayer = null;
-            GameState.isHost = false;
-            GameState.gameState = null;
-            UI.switchScreen('welcome');
-            UI.showNotification('You were removed from the room', 'error');
-        });
-
-        socket.on('player-kicked', ({ playerName, reason }) => {
-            const reasonText = reason === 'host' ? 'removed by host' : 'inactive';
-            UI.showNotification(`${playerName} left (${reasonText})`, 'info');
-        });
-
-        socket.on('turn-unlocked', () => {
-            GameState.turnResolutionInProgress = false;
-            UI.updateGameScreen();
-        });
-
-        socket.on('room-peek', (data) => {
-            GameState.lastRoomPeek = data;
-            if (data.found && data.takenCustomizations) {
-                UI.updateTakenCustomizations(data.takenCustomizations);
             }
         });
-
-        socket.on('disconnected', () => {
-            GameState.clearSession();
-            GameState.currentRoom = null;
-            GameState.currentPlayer = null;
-            GameState.isHost = false;
-            GameState.gameState = null;
-            GameState.animationInProgress = false;
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            Renderer.stopRenderLoop();
-            Camera.enabled = false;
-            Camera.reset();
-            GameState.diceAnimationInProgress = false;
-            GameState.explosionAnimations = [];
-            DOM.mobileCameraBtn.classList.remove('active');
-            Camera.updateButtonIcon();
-            Utils.syncGameLayoutMode();
-            UI.switchScreen('welcome');
-            UI.showNotification('You have left the game', 'info');
-        });
-
-        socket.on('player-left', ({ playerId, playerName }) => {
-            UI.showNotification(`${playerName} left the game`, 'info');
-
-            if (Camera.enabled && GameState.gameState && GameState.gameState.players.length > 0) {
-                Camera.updateTarget();
-                UI.showNotification('Camera updated - Recentering on remaining players', 'info');
-            } else if (Camera.enabled && (!GameState.gameState || GameState.gameState.players.length === 0)) {
-                Camera.enabled = false;
-                Camera.reset();
-                Renderer.stopRenderLoop();
-                DOM.mobileCameraBtn.classList.remove('active');
-                Camera.updateButtonIcon();
-                UI.showNotification('Camera disabled - No players in game', 'info');
-            }
-        });
-
-        socket.on('bot-took-over', ({ playerName, botName }) => {
-            UI.showNotification(`AI took over for ${playerName}. The game can continue.`, 'info');
-        });
-
-        socket.on('bot-dice-control-set', ({ botName, targetPlayerName }) => {
-            UI.showNotification(`${botName} (AI) used revenge power on ${targetPlayerName}`, 'warning');
-        });
-
-        socket.on('game-state', (state) => {
-            const wasStarted = GameState.gameState && GameState.gameState.started;
-            const previousTempVoids = GameState.gameState?.tempVoids || [];
-            GameState.gameState = state;
-            if (state.diceCount) {
-                GameState.currentDiceCount = state.diceCount;
-            }
-
-            if (state.playerRollCounts) {
-                GameState.playerRollCounts = { ...state.playerRollCounts };
-            }
-
-            if (GameState.currentPlayer && state.hostPersistentId) {
-                GameState.isHost = GameState.currentPlayer.persistentId === state.hostPersistentId;
-            }
-
-            if (state.voids && previousTempVoids.length > 0) {
-                GameState.gameState.tempVoids = previousTempVoids.filter(
-                    tile => !state.voids.includes(tile)
-                );
-            } else if (!state.voids || state.voids.length === 0) {
-                GameState.gameState.tempVoids = [];
-            }
-
-            if (state.takenCustomizations) {
-                UI.updateTakenCustomizations(state.takenCustomizations);
-            }
-
+        socket.on('disconnect', () => {
+            Animations.cancel();
+            UI.updateConnectionStatus('disconnected', 'Disconnected — reconnecting…');
+            if (GameState.gameState?.started) UI.updateGameScreen();
             UI.updateLobby();
-            if (state.started) {
-                Utils.syncGameLayoutMode();
-                UI.updateGameScreen();
-                UI.updateHostOnlyTools();
-                if (!wasStarted) {
-                    setTimeout(() => Renderer.resizeCanvas(), 50);
-                }
-            }
         });
+        socket.on('connect_error', () => UI.updateConnectionStatus('disconnected', 'Server unavailable — retrying…'));
+        socket.io.on('reconnect_attempt', () => UI.updateConnectionStatus('connecting', 'Reconnecting…'));
 
+        socket.on('kicked-from-room', () => this.leaveSession('You were removed from the room'));
+        socket.on('session-replaced', () => this.leaveSession('This player session is now open in another tab.', false));
+        socket.on('room-closed', ({ message }) => this.leaveSession(message));
+        socket.on('disconnected', () => this.leaveSession('You have left the game'));
+        socket.on('player-kicked', ({ playerName }) => UI.showNotification(`${playerName} left the lobby`, 'info'));
+        socket.on('player-left', ({ playerName }) => UI.showNotification(`${playerName} left the game`, 'info'));
+        socket.on('bot-took-over', ({ playerName, temporary }) => UI.showNotification(
+            temporary ? `AI is playing for ${playerName} until they reconnect.` : `AI took over for ${playerName}.`, 'info'));
+        socket.on('bot-dice-control-set', ({ botName, targetPlayerName }) => UI.showNotification(`${botName} (AI) used revenge power on ${targetPlayerName}`, 'warning'));
+        socket.on('dice-control-set', ({ targetPlayerName, diceValues }) => UI.showNotification(`${targetPlayerName} will roll ${diceValues.join('–')} on their next turn.`, 'success'));
+
+        socket.on('room-peek', data => {
+            if (data.roomId !== DOM.roomCodeInput.value.trim().toUpperCase()) return;
+            GameState.lastRoomPeek = data;
+            UI.updateTakenCustomizations(data.takenCustomizations || { colors: [], icons: [] });
+        });
+        socket.on('game-state', state => {
+            if (!GameState.currentRoom || state.roomId !== GameState.currentRoom) return;
+            const previousStarted = GameState.gameState?.started;
+            GameState.gameState = state;
+            GameState.currentDiceCount = state.diceCount;
+            GameState.playerRollCounts = { ...state.playerRollCounts };
+            GameState.totalRolls = Object.values(state.playerRollCounts).reduce((a, b) => a + b, 0);
+            GameState.isHost = GameState.currentPlayer?.persistentId === state.hostPersistentId;
+            if (this.awaitingSnapshot || previousStarted !== state.started) {
+                UI.switchScreen(state.started ? 'game' : 'lobby');
+                this.awaitingSnapshot = false;
+            }
+            UI.updateLobby();
+            if (state.started) UI.updateGameScreen();
+            if (!state.winner) this.lastWinnerId = null;
+            if (state.winner && !GameState.turnResolutionInProgress) this.showWinner(state.winner);
+        });
         socket.on('game-started', () => {
-            GameState.totalRolls = 0;
-            GameState.playerRollCounts = {};
-            GameState.animationInProgress = false;
-            GameState.diceAnimationInProgress = false;
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            UI.switchScreen('game');
-            UI.updateHostOnlyTools();
+            Animations.cancel();
+            this.lastWinnerId = null;
             UI.showNotification('Game started!', 'success');
         });
-
-        socket.on('dice-rolled', (result) => {
-            this.handleDiceRoll(result);
-        });
-
         socket.on('game-reset', () => {
+            Animations.cancel();
+            this.lastWinnerId = null;
             DOM.winnerModal.classList.remove('active');
-            GameState.totalRolls = 0;
-            GameState.playerRollCounts = {};
-            GameState.animationInProgress = false;
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            GameState.diceAnimationInProgress = false;
-            GameState.explosionAnimations = [];
-            UI.switchScreen('lobby');
-            UI.showNotification('Game has been reset', 'info');
+            DOM.diceControlModal.classList.remove('active');
+            UI.showNotification('Game reset. Ready up for another round.', 'info');
         });
-
-        socket.on('dice-control-set', ({ targetPlayerName, diceValues }) => {
-            UI.showNotification(`🐍⚡ Dice control set! ${targetPlayerName} will roll ${diceValues.join('-')} on their next turn...`, 'success');
+        socket.on('turn-unlocked', ({ roomId, turnId }) => {
+            if (roomId !== GameState.currentRoom || turnId !== GameState.gameState?.turnId) return;
+            Animations.cancel();
+            UI.updateGameScreen();
         });
-
-        socket.on('error', ({ message }) => {
-            GameState.turnResolutionInProgress = false;
-            GameState.pendingTurnAnimationCompletion = null;
-            if (GameState.isReconnecting) {
-                GameState.clearSession();
-                GameState.isReconnecting = false;
-                UI.switchScreen('welcome');
+        socket.on('dice-rolled', result => {
+            if (result.roomId === GameState.currentRoom) this.handleDiceRoll(result);
+        });
+        socket.on('error', ({ message, code }) => {
+            if (GameState.isReconnecting && (code === 'SESSION_EXPIRED' || code === 'ROOM_NOT_FOUND')) {
+                this.leaveSession(message);
+                return;
+            }
+            if (code === 'ROLL_REJECTED' || (!GameState.animationInProgress && !GameState.diceAnimationInProgress)) {
+                GameState.turnResolutionInProgress = false;
+                if (GameState.gameState?.started) UI.updateGameScreen();
             }
             UI.showNotification(message, 'error');
         });
-
-        socket.on('ladder-mine-explosion', (data) => {
-            AudioSystem.play('mineExplosion');
-            Explosions.create(data.position);
-            if (
-                GameState.pendingTurnAnimationCompletion &&
-                GameState.pendingTurnAnimationCompletion.playerId === data.playerId
-            ) {
-                GameState.pendingTurnAnimationCompletion.waitForExplosionPosition = data.position;
-            }
-            UI.showNotification(`💣💥 MINE EXPLOSION! Tile ${data.position} destroyed! Fall to tile 1!`, 'error');
-
-            if (!GameState.gameState.tempVoids) {
-                GameState.gameState.tempVoids = [];
-            }
-            GameState.gameState.tempVoids.push(data.position);
-        });
-
-        socket.on('test-explosion-triggered', ({ position, triggeredBy }) => {
+        socket.on('test-explosion-triggered', ({ position }) => {
             AudioSystem.play('mineExplosion');
             Explosions.create(position);
-
-            if (!GameState.gameState.tempVoids) {
-                GameState.gameState.tempVoids = [];
-            }
-            if (!GameState.gameState.tempVoids.includes(position)) {
-                GameState.gameState.tempVoids.push(position);
-            }
-
-            UI.showNotification(`💥 Test explosion by ${triggeredBy} on tile ${position}`, 'warning');
         });
-
-        socket.on('games-discovered', (data) => {
+        socket.on('games-discovered', data => {
+            GameState.discoveredGames.clear();
             GameState.lastDiscoveryTime = Date.now();
-            const serverKey = `${data.serverIP}:${data.serverPort}`;
-
-            GameState.discoveredGames.set(serverKey, {
+            GameState.discoveredGames.set('local', {
                 ...data,
-                games: data.games.map(game => ({
-                    ...game,
-                    serverIP: data.serverIP,
-                    serverPort: data.serverPort
-                }))
+                games: data.games.map(game => ({ ...game, sameServer: true, serverIP: data.serverIP, serverPort: data.serverPort }))
             });
-
             Discovery.updateLocalGamesList();
         });
-
-        socket.on('game-broadcast', (data) => {
-            const serverKey = `${data.serverIP}:${data.serverPort}`;
-
-            if (Date.now() - GameState.lastDiscoveryTime > 5000) {
-                GameState.discoveredGames.set(serverKey, {
-                    ...data,
-                    games: data.games.map(game => ({
-                        ...game,
-                        serverIP: data.serverIP,
-                        serverPort: data.serverPort
-                    }))
-                });
-
-                Discovery.updateLocalGamesList();
-            }
-        });
-
-        socket.on('connect', () => {
-            console.log('Connected to server');
-            UI.updateConnectionStatus('connected', 'Connected');
-            if (!GameState.currentRoom && !GameState.isReconnecting) {
-                const existingSession = GameState.loadSession();
-                if (existingSession) {
-                    GameState.isReconnecting = true;
-                    UI.showNotification('Reconnecting to game...', 'info');
-                    socket.emit('reconnect-to-room', {
-                        roomId: existingSession.roomId,
-                        persistentId: existingSession.persistentId
-                    });
-                }
-            }
-        });
-
-        socket.on('disconnect', () => {
-            UI.updateConnectionStatus('disconnected', 'Disconnected — reconnecting…');
-        });
-
-        socket.io.on('reconnect_attempt', () => {
-            UI.updateConnectionStatus('connecting', 'Reconnecting…');
-        });
-
-        socket.io.on('reconnect', () => {
-            UI.updateConnectionStatus('connected', 'Connected');
-        });
     },
-    
+
+    showWinner(winner) {
+        if (this.lastWinnerId === winner.persistentId) return;
+        this.lastWinnerId = winner.persistentId;
+        UI.showWinnerModal(winner);
+    },
+
     handleDiceRoll(result) {
+        Animations.cancel();
+        const player = result.player;
+        if (!player || !Array.isArray(result.movementPath)) return;
         GameState.turnResolutionInProgress = true;
-        GameState.pendingTurnAnimationCompletion = null;
-        GameState.totalRolls++;
-        if (result.player) {
-            if (!GameState.playerRollCounts[result.player.persistentId]) {
-                GameState.playerRollCounts[result.player.persistentId] = 0;
-            }
-            GameState.playerRollCounts[result.player.persistentId]++;
-        }
-
-        const rollingPlayer = result.player;
-
-        if (!rollingPlayer) {
-            console.error('No player data in dice-rolled result:', result);
-            return;
-        }
-        
-        if (!result.diceRoll || result.oldPosition === undefined || result.newPosition === undefined) {
-            console.error('Invalid dice-rolled result data:', result);
-            return;
-        }
-        
-        console.log(`Dice rolled: ${rollingPlayer.name} rolled ${result.diceRoll}, moving ${result.oldPosition} → ${result.newPosition}`);
-        
-        GameState.playerAnimations[rollingPlayer.persistentId] = {
-            from: result.oldPosition,
-            to: result.oldPosition,
-            progress: 0,
-            locked: true
-        };
-        
-        Renderer.startRenderLoop();
-        
         GameState.diceAnimationInProgress = true;
-        const diceToShow = result.diceRolls || result.diceRoll;
-        const isLocalRollingPlayer =
-            GameState.currentPlayer &&
-            rollingPlayer.persistentId === GameState.currentPlayer.persistentId;
-
-        Animations.animateDiceRoll(diceToShow, () => {
-            const oldPosition = result.oldPosition;
-            const newPosition = result.newPosition;
-            const hasSnakeOrLadder = result.snake || result.ladder;
-            const movementSoundSeed = [
-                rollingPlayer.persistentId,
-                oldPosition,
-                newPosition,
-                result.diceRoll,
-                result.enteredBoard ? 'entered' : 'normal',
-                result.snake ? `${result.snake.from}-${result.snake.to}` : 'nosnake',
-                result.ladder ? `${result.ladder.from}-${result.ladder.to}` : 'noladder'
-            ].join('|');
-            const movementSound = AudioSystem.selectBySeed('playerMove', 'playerMove2', movementSoundSeed, 0.7);
-
-            const effectiveDiceRoll = result.enteredBoard ? 1 : result.diceRoll;
-
-            if (result.needsSixToStart && oldPosition === 0 && newPosition === 0) {
-                delete GameState.playerAnimations[rollingPlayer.persistentId];
-                GameState.diceAnimationInProgress = false;
-                GameState.animationInProgress = false;
-                
-                if (!Renderer.hasActiveAnimations()) {
-                    Renderer.stopRenderLoop();
-                }
-                
-                DOM.lastRollDisplay.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
-                if (DOM.mobileLastRoll) {
-                    DOM.mobileLastRoll.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
-                }
-                
-                UI.showNotification(`🎯 ${rollingPlayer.name} needs to roll a 6 to enter the board!`, 'info');
-                this.completeTurnAnimationIfNeeded({
-                    roomId: GameState.currentRoom,
-                    playerId: rollingPlayer.persistentId
-                });
-                
-                setTimeout(() => {
-                    UI.updateGameScreen();
-                }, 100);
-                return;
-            }
-
-            Animations.animatePlayerMovement(
-                rollingPlayer.persistentId,
-                oldPosition,
-                newPosition,
-                effectiveDiceRoll,
-                hasSnakeOrLadder,
-                result.snake,
-                result.ladder,
-                movementSound,
-                () => {
-                    delete GameState.playerAnimations[rollingPlayer.persistentId];
-                    GameState.diceAnimationInProgress = false;
-                    GameState.animationInProgress = false;
-                    
-                    if (!Renderer.hasActiveAnimations()) {
-                        Renderer.stopRenderLoop();
-                    }
-                    
-                    DOM.lastRollDisplay.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
-                if (DOM.mobileLastRoll) {
-                    DOM.mobileLastRoll.innerHTML = UI.renderRollMarkup(result.diceRoll, 'Rolled');
-                }
-
-                    if (result.wasControlled && GameState.currentPlayer && result.controllerPlayerId === GameState.currentPlayer.persistentId) {
-                        UI.showNotification(`🐍⚡ Your controlled roll succeeded! ${rollingPlayer.name} rolled ${result.diceRoll}`, 'success');
-                    }
-
-                    if (result.powerGranted && GameState.currentPlayer && rollingPlayer.persistentId === GameState.currentPlayer.persistentId) {
-                        const threshold = GameState.gameState.snakeThreshold || 3;
-                        UI.showNotification(`🐍⚡ REVENGE POWER UNLOCKED! You've been bitten by ${threshold} snakes! Click the power button to control another player's dice!`, 'success');
-                    }
-
-                    if (result.enteredBoard) {
-                        UI.showNotification(`🎯 ${rollingPlayer.name} rolled a 6 and entered the board at tile 1!`, 'success');
-                    }
-
-                    if (result.bouncedBack) {
-                        UI.showNotification(`🏁 ${rollingPlayer.name} overshot by ${result.overshoot}! Bounced back to tile ${result.newPosition}!`, 'warning');
-                    }
-
-                    if (result.mine) {
-                        if (!result.mine.waitForLadder) {
-                            AudioSystem.play('mineExplosion');
-                            Explosions.create(result.mine.position);
-                            UI.showNotification(`💣💥 MINE EXPLOSION! Tile ${result.mine.position} destroyed! Fall to tile 1!`, 'error');
-
-                            if (!GameState.gameState.tempVoids) {
-                                GameState.gameState.tempVoids = [];
-                            }
-                            GameState.gameState.tempVoids.push(result.mine.position);
-                        } else {
-                            console.log('Mine explosion deferred until ladder animation completes');
-                        }
-                    }
-                    else if (result.voidFall) {
-                        AudioSystem.play('downSnake');
-                        if (result.voidFall.to === 1) {
-                            UI.showNotification(`⚫ Fell into the void at tile ${result.voidFall.from}! Can't move back further, left at tile 1!`, 'error');
-                        } else {
-                            UI.showNotification(`⚫ Fell into the void at tile ${result.voidFall.from}! Fall back to tile ${result.voidFall.to}!`, 'error');
-                        }
-                    }
-                    else if (result.snake) {
-                        UI.showNotification(`🐍 Snake! Slide down ${result.snake.from} → ${result.snake.to}`, 'info');
-                    } else if (result.ladder) {
-                        UI.showNotification(`🪜 Ladder! Climb up ${result.ladder.from} → ${result.ladder.to}`, 'success');
-                    } else if (result.anotherTurn) {
-                        if (GameState.currentDiceCount === 2) {
-                            const diceRolls = result.diceRolls || [result.diceRoll];
-                            if (diceRolls.length === 2 && diceRolls[0] === diceRolls[1]) {
-                                UI.showNotification(`Doubles (${diceRolls[0]}–${diceRolls[1]}) — ${rollingPlayer.name} rolls again`, 'success');
-                            } else {
-                                UI.showNotification(`${rollingPlayer.name} rolls again`, 'success');
-                            }
-                        } else {
-                            UI.showNotification(`Rolled a 6 — ${rollingPlayer.name} rolls again`, 'success');
-                        }
-                    }
-
-                    if (result.winner) {
-                        setTimeout(() => {
-                            UI.showWinnerModal(result.winner);
-                        }, 500);
-                    }
-
-                    this.completeTurnAnimationIfNeeded({
-                        roomId: GameState.currentRoom,
-                        playerId: rollingPlayer.persistentId,
-                        waitForExplosionPosition: result.mine ? result.mine.position : null
+        GameState.pendingMinePosition = result.mine?.position || null;
+        GameState.playerAnimations[player.persistentId] = {
+            from: result.oldPosition, to: result.oldPosition, progress: 0, locked: true
+        };
+        UI.updateGameScreen();
+        Renderer.startRenderLoop();
+        Animations.animateDiceRoll(result.diceRolls, () => {
+            Animations.animateMove(result, () => {
+                GameState.turnResolutionInProgress = false;
+                GameState.pendingMinePosition = null;
+                if (GameState.socket.connected) {
+                    GameState.socket.emit('turn-animation-complete', {
+                        roomId: result.roomId, playerId: player.persistentId, turnId: result.turnId
                     });
-
-                    setTimeout(() => {
-                        UI.updateGameScreen();
-                    }, 100);
                 }
-            );
-        }, {
-            playerName: isLocalRollingPlayer ? '' : rollingPlayer.name
-        });
+                this.showMoveMessage(result);
+                UI.updateGameScreen();
+                if (!Renderer.hasActiveAnimations()) Renderer.stopRenderLoop();
+                if (result.winner) this.showWinner(result.winner);
+            });
+        }, { playerName: player.persistentId === GameState.currentPlayer?.persistentId ? '' : player.name });
     },
 
-    completeTurnAnimationIfNeeded({ roomId, playerId, waitForExplosionPosition = null }) {
-        if (!roomId || !playerId) return;
-
-        if (waitForExplosionPosition) {
-            GameState.pendingTurnAnimationCompletion = {
-                roomId,
-                playerId,
-                waitForExplosionPosition
-            };
-            return;
+    showMoveMessage(result) {
+        const name = result.player.name;
+        if (result.mine) UI.showNotification(`Mine on tile ${result.mine.position}! ${name} falls to tile 1.`, 'error');
+        else if (result.voidFall) UI.showNotification(`${name} fell into a void and moved back to ${result.newPosition}.`, 'warning');
+        else if (result.snake) UI.showNotification(`Snake! ${name} slides from ${result.snake.from} to ${result.snake.to}.`, 'info');
+        else if (result.ladder) UI.showNotification(`Ladder! ${name} climbs from ${result.ladder.from} to ${result.ladder.to}.`, 'success');
+        else if (result.needsSixToStart) UI.showNotification(`${name} needs a six to enter the board.`, 'info');
+        else if (result.enteredBoard) UI.showNotification(`${name} rolled a six and entered the board.`, 'success');
+        else if (result.bouncedBack) UI.showNotification(`${name} bounced back to tile ${result.newPosition}.`, 'info');
+        else if (result.anotherTurn && !result.winner) UI.showNotification(`${name} rolls again!`, 'success');
+        if (result.powerGranted && result.player.persistentId === GameState.currentPlayer?.persistentId) {
+            UI.showNotification('Revenge power unlocked! Choose another player’s next dice roll.', 'success');
         }
-
-        GameState.pendingTurnAnimationCompletion = null;
-        GameState.turnResolutionInProgress = false;
-        GameState.socket.emit('turn-animation-complete', {
-            roomId,
-            playerId
-        });
     }
 };

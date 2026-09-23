@@ -52,12 +52,7 @@ const Utils = {
     },
 
     getInviteUrl(roomId) {
-        const params = new URLSearchParams({
-            autoJoin: 'true',
-            room: roomId
-        });
-        const name = document.getElementById('player-name')?.value?.trim();
-        if (name) params.set('name', name);
+        const params = new URLSearchParams({ room: roomId });
         return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     },
 
@@ -117,8 +112,8 @@ const Utils = {
         if (!fromPos || !toPos || !isFinite(fromPos.x) || !isFinite(fromPos.y) || !isFinite(toPos.x) || !isFinite(toPos.y)) {
             console.warn('Invalid positions in getSnakeControlPoint, using midpoint as control point');
             return {
-                x: (fromPos?.x || 0 + toPos?.x || 0) / 2,
-                y: (fromPos?.y || 0 + toPos?.y || 0) / 2
+                x: ((fromPos?.x || 0) + (toPos?.x || 0)) / 2,
+                y: ((fromPos?.y || 0) + (toPos?.y || 0)) / 2
             };
         }
 
@@ -148,8 +143,9 @@ const Utils = {
             !isFinite(endPos.x) || !isFinite(endPos.y) ||
             !isFinite(t)) {
             console.warn('Invalid parameters in getPointOnBezierCurve, falling back to linear interpolation');
-            const x = startPos?.x || 0 + (endPos?.x || 0 - startPos?.x || 0) * t;
-            const y = startPos?.y || 0 + (endPos?.y || 0 - startPos?.y || 0) * t;
+            const progress = Number.isFinite(t) ? t : 0;
+            const x = (startPos?.x || 0) + ((endPos?.x || 0) - (startPos?.x || 0)) * progress;
+            const y = (startPos?.y || 0) + ((endPos?.y || 0) - (startPos?.y || 0)) * progress;
             return { x, y };
         }
 

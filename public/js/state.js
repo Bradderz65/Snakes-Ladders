@@ -4,11 +4,13 @@ const GameState = {
     socket: null,
     currentRoom: null,
     currentPlayer: null,
+    reconnectToken: null,
+    reconnectSuppressed: false,
     gameState: null,
     isReconnecting: false,
     isHost: false,
     connectionStatus: 'connecting',
-    soundMuted: localStorage.getItem('snakesSoundMuted') === 'true',
+    soundMuted: (() => { try { return localStorage.getItem('snakesSoundMuted') === 'true'; } catch { return false; } })(),
     lastRoomPeek: null,
     
     // Animation state
@@ -18,6 +20,7 @@ const GameState = {
     playerAnimations: {},
     diceAnimationInProgress: false,
     explosionAnimations: [],
+    pendingMinePosition: null,
     
     // Game statistics
     totalRolls: 0,
@@ -61,30 +64,36 @@ const GameState = {
     currentDiceCount: 1,
     
     // Session management
+    send(event, data) {
+        if (!this.socket?.connected || this.isReconnecting) {
+            UI.showNotification('Wait for the connection to return before playing.', 'info');
+            return false;
+        }
+        this.socket.emit(event, data);
+        return true;
+    },
+
     saveSession() {
         if (this.currentRoom && this.currentPlayer) {
             const session = {
                 roomId: this.currentRoom,
                 persistentId: this.currentPlayer.persistentId,
+                reconnectToken: this.reconnectToken,
                 playerName: this.currentPlayer.name
             };
-            localStorage.setItem('snakesAndLaddersSession', JSON.stringify(session));
+            try { localStorage.setItem('snakesAndLaddersSession', JSON.stringify(session)); } catch { /* Storage may be disabled. */ }
         }
     },
     
     loadSession() {
-        const sessionData = localStorage.getItem('snakesAndLaddersSession');
-        if (sessionData) {
-            try {
-                return JSON.parse(sessionData);
-            } catch (e) {
-                return null;
-            }
-        }
+        try {
+            const session = JSON.parse(localStorage.getItem('snakesAndLaddersSession'));
+            if (session && typeof session.roomId === 'string' && typeof session.persistentId === 'string' && typeof session.reconnectToken === 'string') return session;
+        } catch { /* Ignore unavailable storage and old/corrupt sessions. */ }
         return null;
     },
     
     clearSession() {
-        localStorage.removeItem('snakesAndLaddersSession');
+        try { localStorage.removeItem('snakesAndLaddersSession'); } catch { /* Storage may be disabled. */ }
     }
 };

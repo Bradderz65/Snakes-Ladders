@@ -108,6 +108,7 @@ describe('Socket.IO integration', () => {
 
         host.emit('turn-animation-complete', {
             roomId: created.roomId,
+            turnId: roll.turnId,
             playerId: roll.player.persistentId
         });
         await waitForEvent(host, 'game-state');
@@ -139,6 +140,7 @@ describe('Socket.IO integration', () => {
 
         host.emit('turn-animation-complete', {
             roomId: created.roomId,
+            turnId: roll.turnId,
             playerId: roll.player.persistentId
         });
         await waitForEvent(host, 'game-state');
@@ -191,6 +193,7 @@ describe('Socket.IO integration', () => {
         const reconnected = await openClient();
         reconnected.emit('reconnect-to-room', {
             roomId: created.roomId,
+            reconnectToken: created.reconnectToken,
             persistentId
         });
 

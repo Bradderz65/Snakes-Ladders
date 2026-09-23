@@ -50,7 +50,7 @@ const Renderer = {
         }
         
         if (GameState.gameState.voids && GameState.gameState.voids.length > 0) {
-            Draw.voids(GameState.gameState.voids);
+            Draw.voids(GameState.gameState.voids.filter(tile => tile !== GameState.pendingMinePosition));
         }
         
         let snakeOpacities = {};
@@ -117,9 +117,9 @@ const Renderer = {
             Draw.ladders(GameState.gameState.ladders, ladderOpacities);
         }
         
-        if (GameState.gameState.mines && GameState.gameState.mines.length > 0) {
-            Draw.mines(GameState.gameState.mines);
-        }
+        const visibleMines = new Set(GameState.gameState.mines || []);
+        if (GameState.pendingMinePosition) visibleMines.add(GameState.pendingMinePosition);
+        if (visibleMines.size) Draw.mines([...visibleMines]);
         
         Explosions.draw();
         

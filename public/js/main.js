@@ -131,6 +131,13 @@ document.addEventListener('DOMContentLoaded', () => {
     DOM.keepCustomizationBtn.addEventListener('click', () => {
         DOM.conflictModal.classList.remove('active');
         if (GameState.pendingJoinAction) {
+            const taken = GameState.lastRoomPeek?.takenCustomizations || { colors: [], icons: [] };
+            if (taken.colors.includes(GameState.selectedColor)) {
+                [...DOM.colorOptions].find(option => !taken.colors.includes(option.dataset.color))?.click();
+            }
+            if (taken.icons.includes(GameState.selectedIcon)) {
+                [...DOM.iconOptions].find(option => !taken.icons.includes(option.dataset.icon))?.click();
+            }
             Customization.executeJoinAction(GameState.pendingJoinAction);
             GameState.pendingJoinAction = null;
         }
@@ -208,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
         GameState.discoveredGames.clear();
         Discovery.updateLocalGamesList();
 
-        GameState.socket.emit('discover-games');
+        GameState.send('discover-games');
         UI.showNotification('Searching for local games...', 'info');
 
         setTimeout(() => {
@@ -255,29 +262,31 @@ document.addEventListener('DOMContentLoaded', () => {
     DOM.roomCodeInput.addEventListener('input', (e) => {
         e.target.value = e.target.value.toUpperCase();
         const code = e.target.value.trim();
+        GameState.lastRoomPeek = null;
+        UI.updateTakenCustomizations({ colors: [], icons: [] });
         if (code.length === 6) {
-            GameState.socket.emit('peek-room', { roomId: code });
+            GameState.send('peek-room', { roomId: code });
         }
     });
 
     DOM.readyBtn.addEventListener('click', () => {
-        GameState.socket.emit('toggle-ready', { roomId: GameState.currentRoom });
+        GameState.send('toggle-ready', { roomId: GameState.currentRoom });
     });
 
     DOM.startGameBtn.addEventListener('click', () => {
-        GameState.socket.emit('start-game', { roomId: GameState.currentRoom });
+        GameState.send('start-game', { roomId: GameState.currentRoom });
     });
 
     // Game buttons
     DOM.rollDiceBtn.addEventListener('click', () => {
         if (GameState.gameState && GameState.currentPlayer && !GameState.animationInProgress && !GameState.turnResolutionInProgress) {
             const currentTurnPlayer = GameState.gameState.players[GameState.gameState.currentTurn];
-            const isMyTurn = currentTurnPlayer.persistentId === GameState.currentPlayer.persistentId;
+            const isMyTurn = currentTurnPlayer?.persistentId === GameState.currentPlayer.persistentId;
             if (isMyTurn && !DOM.rollDiceBtn.disabled) {
                 DOM.rollDiceBtn.disabled = true;
                 DOM.mobileRollBtn.disabled = true;
                 GameState.turnResolutionInProgress = true;
-                GameState.socket.emit('roll-dice', { roomId: GameState.currentRoom });
+                GameState.send('roll-dice', { roomId: GameState.currentRoom });
             }
         }
     });
@@ -290,20 +299,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOM.mobileRollBtn.disabled = true;
                 DOM.rollDiceBtn.disabled = true;
                 GameState.turnResolutionInProgress = true;
-                GameState.socket.emit('roll-dice', { roomId: GameState.currentRoom });
+                GameState.send('roll-dice', { roomId: GameState.currentRoom });
             }
         }
     });
 
     DOM.resetGameBtn.addEventListener('click', () => {
         if (confirm('Are you sure you want to reset the game?')) {
-            GameState.socket.emit('reset-game', { roomId: GameState.currentRoom });
+            GameState.send('reset-game', { roomId: GameState.currentRoom });
         }
     });
 
     DOM.testExplosionBtn.addEventListener('click', () => {
         if (!GameState.currentRoom) return;
-        GameState.socket.emit('trigger-test-explosion', { roomId: GameState.currentRoom });
+        GameState.send('trigger-test-explosion', { roomId: GameState.currentRoom });
     });
 
     // Dice control
@@ -341,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
             diceValues.push(value);
         }
 
-        GameState.socket.emit('set-controlled-dice', {
+        GameState.send('set-controlled-dice', {
             roomId: GameState.currentRoom,
             targetPlayerId: targetPlayerId,
             diceValues: diceValues
@@ -412,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
     DOM.mobileResetBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (confirm('Are you sure you want to reset the game?')) {
-            GameState.socket.emit('reset-game', { roomId: GameState.currentRoom });
+            GameState.send('reset-game', { roomId: GameState.currentRoom });
             UI.closeMobileSettingsMenu();
         }
     });
@@ -420,14 +429,14 @@ document.addEventListener('DOMContentLoaded', () => {
     DOM.mobileTestExplosionBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (!GameState.currentRoom) return;
-        GameState.socket.emit('trigger-test-explosion', { roomId: GameState.currentRoom });
+        GameState.send('trigger-test-explosion', { roomId: GameState.currentRoom });
         UI.closeMobileSettingsMenu();
     });
 
     DOM.mobileLeaveBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (confirm('Are you sure you want to leave the game?')) {
-            GameState.socket.emit('manual-disconnect', { roomId: GameState.currentRoom });
+            GameState.send('manual-disconnect', { roomId: GameState.currentRoom });
             UI.closeMobileSettingsMenu();
         }
     });
@@ -435,13 +444,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Disconnect buttons
     DOM.leaveLobbyBtn.addEventListener('click', () => {
         if (confirm('Are you sure you want to leave the game?')) {
-            GameState.socket.emit('manual-disconnect', { roomId: GameState.currentRoom });
+            GameState.send('manual-disconnect', { roomId: GameState.currentRoom });
         }
     });
 
     DOM.leaveGameBtn.addEventListener('click', () => {
         if (confirm('Are you sure you want to leave the game?')) {
-            GameState.socket.emit('manual-disconnect', { roomId: GameState.currentRoom });
+            GameState.send('manual-disconnect', { roomId: GameState.currentRoom });
         }
     });
 
@@ -449,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     DOM.playAgainBtn.addEventListener('click', () => {
         GameState.totalRolls = 0;
         GameState.playerRollCounts = {};
-        GameState.socket.emit('reset-game', { roomId: GameState.currentRoom });
+        GameState.send('reset-game', { roomId: GameState.currentRoom });
         DOM.winnerModal.classList.remove('active');
     });
 
@@ -457,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
         GameState.totalRolls = 0;
         GameState.playerRollCounts = {};
         if (GameState.currentRoom) {
-            GameState.socket.emit('manual-disconnect', { roomId: GameState.currentRoom });
+            GameState.send('manual-disconnect', { roomId: GameState.currentRoom });
         }
         DOM.winnerModal.classList.remove('active');
     });
@@ -523,70 +532,9 @@ document.addEventListener('DOMContentLoaded', () => {
     Discovery.updateLocalGamesList();
     Discovery.startAutoDiscovery();
 
-    // Check for auto-join parameters
-    const urlParams = Utils.getUrlParameters();
-    if (urlParams.autoJoin && urlParams.room && urlParams.name) {
-        DOM.playerNameInput.value = urlParams.name;
+    // Connection and saved-session restoration happen once, on each socket connect.
+    UI.switchScreen('welcome');
 
-        if (urlParams.color) {
-            GameState.selectedColor = urlParams.color;
-            document.querySelectorAll('.color-option.selected').forEach(el => {
-                el.classList.remove('selected');
-            });
-            const colorOption = document.querySelector(`.color-option[data-color="${urlParams.color}"]`);
-            if (colorOption) {
-                colorOption.classList.add('selected');
-            }
-        }
-
-        if (urlParams.icon) {
-            GameState.selectedIcon = urlParams.icon;
-            document.querySelectorAll('.icon-option.selected').forEach(el => {
-                el.classList.remove('selected');
-            });
-            const iconOption = document.querySelector(`.icon-option[data-icon="${urlParams.icon}"]`);
-            if (iconOption) {
-                iconOption.classList.add('selected');
-            }
-        }
-
-        UI.updatePlayerPreview();
-
-        let autoJoinHandled = false;
-        socket.on('connect', () => {
-            if (!autoJoinHandled) {
-                autoJoinHandled = true;
-                setTimeout(() => {
-                    UI.showNotification(`Auto-joining room ${urlParams.room}...`, 'info');
-                    socket.emit('join-room', {
-                        roomId: urlParams.room,
-                        playerName: urlParams.name,
-                        playerColor: GameState.selectedColor,
-                        playerIcon: GameState.selectedIcon
-                    });
-                }, 500);
-            }
-        });
-    } else {
-        setTimeout(() => {
-            if (DOM.welcomeScreen.classList.contains('active')) {
-                DOM.refreshGamesBtn.click();
-            }
-        }, 2000);
-    }
-
-    // Check for existing session
-    const existingSession = GameState.loadSession();
-    if (existingSession) {
-        GameState.isReconnecting = true;
-        UI.showNotification('Reconnecting to game...', 'info');
-        socket.emit('reconnect-to-room', {
-            roomId: existingSession.roomId,
-            persistentId: existingSession.persistentId
-        });
-    } else {
-        UI.switchScreen('welcome');
-    }
 });
 
 // Collapsible sections helper
@@ -601,6 +549,15 @@ function initializeCollapsibleSections() {
             toggle.classList.add('collapsed');
             content.classList.add('collapsed');
         }
+        toggle.setAttribute('role', 'button');
+        toggle.tabIndex = 0;
+        toggle.setAttribute('aria-expanded', String(!content.classList.contains('collapsed')));
+        toggle.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggle.click();
+            }
+        });
         
         toggle.addEventListener('click', () => {
             if (GameState.currentMode === 'join') {
@@ -617,6 +574,7 @@ function initializeCollapsibleSections() {
             
             toggle.classList.toggle('collapsed');
             content.classList.toggle('collapsed');
+            toggle.setAttribute('aria-expanded', String(!content.classList.contains('collapsed')));
         });
     });
 }

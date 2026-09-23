@@ -3,10 +3,10 @@ const Discovery = {
     startAutoDiscovery() {
         this.stopAutoDiscovery();
         
-        GameState.socket.emit('discover-games');
+        if (GameState.socket.connected) GameState.send('discover-games');
         
         GameState.autoDiscoveryInterval = setInterval(() => {
-            GameState.socket.emit('discover-games');
+            if (GameState.socket.connected) GameState.send('discover-games');
         }, 8000);
     },
     
@@ -44,7 +44,7 @@ const Discovery = {
             gameItem.className = 'local-game-item';
 
             const timeAgo = Utils.getTimeAgo(game.createdAt);
-            const serverDisplay = `${game.serverIP}:${game.serverPort}`;
+            const serverDisplay = game.sameServer ? 'This server' : `${game.serverIP}:${game.serverPort}`;
 
             const safeHost = Utils.escapeHtml(game.hostname || 'Local Game');
             const safeRules = game.rulesSummary ? Utils.escapeHtml(game.rulesSummary) : '';
@@ -72,14 +72,14 @@ const Discovery = {
 
             const joinBtn = gameItem.querySelector('.btn-join');
             joinBtn.addEventListener('click', () => {
-                Discovery.joinLocalGame(game.roomId, game.serverIP, game.serverPort);
+                Discovery.joinLocalGame(game.roomId, game.serverIP, game.serverPort, game.sameServer);
             });
 
             DOM.localGamesList.appendChild(gameItem);
         });
     },
     
-    joinLocalGame(roomId, serverIP, serverPort) {
+    joinLocalGame(roomId, serverIP, serverPort, sameServer = false) {
         const name = DOM.playerNameInput.value.trim();
         if (!name) {
             UI.showNotification('Please enter your name first', 'error');
@@ -90,7 +90,7 @@ const Discovery = {
         const currentPort = parseInt(window.location.port) || 80;
         const currentHost = window.location.hostname;
 
-        const isSameServer = (serverPort === currentPort) &&
+        const isSameServer = sameServer || (Number(serverPort) === currentPort) &&
             (serverIP === currentHost ||
              serverIP === 'localhost' ||
              currentHost === 'localhost' ||
@@ -98,7 +98,7 @@ const Discovery = {
              currentHost === '127.0.0.1');
 
         if (isSameServer) {
-            GameState.socket.emit('peek-room', { roomId });
+            GameState.send('peek-room', { roomId });
             UI.showNotification(`Joining game ${roomId}...`, 'info');
             setTimeout(() => {
                 Customization.tryJoinWithConflictCheck({

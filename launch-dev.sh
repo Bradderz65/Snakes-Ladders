@@ -15,7 +15,7 @@ fi
 # Frontend files in public/ are served statically and picked up on browser refresh.
 if command -v npx >/dev/null 2>&1; then
   echo "Starting dev server with live restart (nodemon)..."
-  exec npx nodemon --watch server.js --ext js,json --signal SIGTERM server.js
+  exec npx nodemon --watch server.js --watch lib --ext js,json --signal SIGTERM server.js
 fi
 
 # Fallback: built-in Node watcher (backend files)

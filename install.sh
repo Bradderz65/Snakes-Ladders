@@ -151,10 +151,11 @@ print_access_info() {
 }
 
 install_system_deps
+node -e "if (Number(process.versions.node.split('.')[0]) < 20) { console.error('Node.js 20 or newer is required. Install Node.js 22 or newer, then rerun this installer.'); process.exit(1); }"
 prepare_repo
 
 log "Installing npm dependencies..."
-npm install
+npm ci
 
 print_access_info
 

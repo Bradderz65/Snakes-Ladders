@@ -1,254 +1,106 @@
-# 🎲 Snakes & Ladders - Multiplayer Game 🪜
+# Snakes & Ladders
 
-A modern, fully functional multiplayer Snakes and Ladders game that works seamlessly on mobile, tablet, and desktop devices. Play with friends over your local network!
+A real-time board game for one to six players on the same server. Open the host's network URL on phones, tablets or computers, create a room, and share its code or invite link.
 
-## ✨ Features
+## Run the game
 
-- 🎮 **Single & Multiplayer** - Play solo or with 2-6 friends simultaneously
-- 🌐 **Cross-Platform** - Works on mobile phones, tablets, and desktop computers
-- 🎨 **Modern UI** - Beautiful, responsive design with smooth animations
-- 🔄 **Real-time Sync** - All players see moves instantly using WebSocket technology
-- 🐍 **Classic Gameplay** - Traditional snakes and ladders with 10x10 board
-- 🎯 **Easy to Use** - Simple room creation and joining system
-- 📱 **Mobile Optimized** - Touch-friendly interface for mobile devices
-- 🔌 **Auto-Reconnect** - Refresh the page without losing your game session
-- 🚪 **Manual Disconnect** - Leave game button for intentional exits
-- 👑 **Host Controls** - Room creator starts/resets the game and manages the lobby
-- 🔗 **Invite Links** - Copy a shareable join URL from the lobby
-- 🔊 **Sound Toggle** - Mute/unmute game sounds
-- 📡 **Connection Indicator** - See when you're connected or reconnecting
+Use Node.js 22 or newer (minimum supported runtime: Node.js 20) and npm.
 
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Node.js (version 14 or higher)
-- npm (comes with Node.js)
-
-### One-Line Install
-
-**Termux:**
-```bash
-pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh
+```sh
+npm ci
+npm start
 ```
 
-**Linux / macOS:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh
+Open `http://localhost:3000` on the host. Other devices use the network URL printed by the server, for example `http://192.168.1.20:3000`. Devices must be able to reach that host and port.
+
+```sh
+PORT=8080 npm start       # Use another port
+./launch.sh              # Install missing project dependencies and start
+npm run dev:live          # Restart when server.js or lib/ changes
 ```
 
-To install and start the server immediately on Termux:
-```bash
-pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh -s -- --start
-```
+Frontend files are served directly; refresh the browser to pick up changes. A backend restart closes the current rooms.
 
-To install and start the server immediately on Linux / macOS:
-```bash
-curl -fsSL https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh | sh -s -- --start
-```
+The installer supports Linux, macOS and Termux:
 
-If you already cloned the repo:
-```bash
+```sh
 sh install.sh
+sh install.sh --start
 ```
 
-### Installation
+From outside a checkout, download the installer first so you can inspect it:
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Start the server:**
-   ```bash
-   npm start
-   ```
-
-3. **Access the game:**
-   - On the host computer: Open `http://localhost:3000` in your browser
-   - On other devices: Open `http://<host-ip-address>:3000` in your browser
-
-### Finding Your Local IP Address
-
-**On Linux/Mac:**
-```bash
-ifconfig | grep "inet " | grep -v 127.0.0.1
+```sh
+curl -fsSLO https://raw.githubusercontent.com/Bradderz65/Snakes-Ladders/main/install.sh
+sh install.sh --start
 ```
 
-**On Windows:**
-```bash
-ipconfig
+The installer can install missing system packages. If the operating system supplies an old Node.js version, install a supported version before running it again.
+
+## Play
+
+1. Choose **Create session**, enter a name, select a piece and configure the rules.
+2. Share the room code or **Copy invite link**. Guests choose their own name and an available color and emblem.
+3. Each player selects **Ready**. The host starts once everyone is connected and ready.
+4. Roll when your name is highlighted. The server keeps every player synchronized.
+5. Land exactly on tile 100 to win. The host can reset for another round.
+
+A discoverable room appears in the lobby browser for people connected to the **same game server**. This does not scan for separate servers elsewhere on your network. Private rooms can be joined with their code or link.
+
+## Rules
+
+- **Board:** 100 tiles, 10 snakes and 8 ladders on the classic layout.
+- **One die:** rolling six gives another turn.
+- **Two dice:** rolling doubles gives another turn.
+- **Overshoot:** stay in place by default. Enable **Bounce back on overshoot** to move to 100 and then back by the excess; hazards on the landing tile still apply.
+- **Require six:** remain off the board until either die shows a six, then enter at tile 1. Entry does not trigger the ladder on tile 1.
+- **Revenge:** after the configured number of snake bites, choose another player's next dice values once per game. The choice stays private until that roll.
+- **Mines:** landing on a mine, including at a ladder top, sends the player to tile 1 and destroys the mine.
+- **Voids:** destroyed mine tiles send a player back three times their dice total, stopping at tile 1.
+- **Random boards:** generate a new snake and ladder layout when a room is created or the game resets.
+
+Colors and emblems must be unique within the room. The conflict dialog can choose available alternatives for you.
+
+## Connections and hosts
+
+Refreshing the page or recovering from a network drop restores the saved seat with a private reconnect credential. If the same session opens in another tab, control moves to that tab.
+
+During a game, a player who stays disconnected for 30 seconds gets a temporary bot when another human is connected. Reconnecting reclaims the seat and its current position. When a player intentionally leaves a two-human game, a permanent bot keeps the remaining player company.
+
+The host role passes to an available human when the host leaves or remains disconnected for 30 seconds. A quick refresh preserves host controls. In the lobby the host can remove absent players. Only the host can start or reset a game. The explosion preview is cosmetic.
+
+Rooms stay in memory on a **single server process**. They survive browser refreshes, not server restarts. Fully disconnected lobbies expire after 30 minutes; games expire after 24 hours without activity. Bots pause when no human is connected. For public hosting, run the process behind an HTTPS reverse proxy that preserves the Host header and supports WebSockets.
+
+## Development and checks
+
+```sh
+npm test
+npm run test:unit
+npm run test:integration
+npm run test:watch
+npm audit
 ```
 
-Look for your local IP address (usually starts with 192.168.x.x or 10.x.x.x)
+The test suite covers movement, powers, hazards, room membership, host transfer, reconnect credentials, bot takeover, animation acknowledgements, timeout recovery and server shutdown. GitHub Actions runs it on Node.js 22 and 24.
 
-## 🎮 How to Play
+`GET /health` returns server status and the number of rooms. See [TESTING_GUIDE.md](TESTING_GUIDE.md) for browser checks.
 
-### Starting a Game
+## Architecture
 
-1. **Create a Room:**
-   - Enter your name
-   - Click "Create Room"
-   - Share the room code with your friends
+- `server.js`: entrypoint, network URLs and graceful shutdown.
+- `lib/game-server.js`: isolated server instances, room lifecycle, Socket.IO validation, session credentials, timers and bots.
+- `lib/game-engine.js`: game rules, deterministic movement resolution and public snapshots.
+- `public/js/`: client state, interface, canvas rendering, sound and cancellable animations.
+- `test/`: Node.js unit tests and real Socket.IO integration tests.
 
-2. **Join a Room:**
-   - Enter your name
-   - Click "Join Room"
-   - Enter the room code shared by your friend
-   - Click "Join"
+The server resolves all movement and board changes before broadcasting them. Browsers acknowledge presentation of a numbered turn; they cannot decide mine outcomes. The next turn waits for connected players' animations, with a 25-second server fallback for inactive browser tabs.
 
-3. **Get Ready:**
-   - Wait for all players to join (1-6 players)
-   - Click "Ready" when you're ready to play
-   - Once all players are ready, you can start the game
+## Troubleshooting
 
-4. **Playing:**
-   - Players take turns rolling the dice
-   - Your piece moves forward by the number rolled
-   - Land on a ladder to climb up 🪜
-   - Land on a snake to slide down 🐍
-   - First player to reach square 100 wins! 🏆
+- **Cannot connect:** check the printed network URL, Wi-Fi isolation and the host firewall.
+- **Port already in use:** stop your existing game server or choose another `PORT`. The launcher never kills an unrelated service.
+- **Cannot join:** check the six-character code, that the game has not started, and that the room has fewer than six players.
+- **Saved session expired:** the room may have closed or the server restarted. Create or join another room.
+- **Old UI after updating:** refresh every player tab. Protocol changes require the server and browser files from the same checkout.
 
-### Game Rules
-
-- **Winning:** First player to land exactly on square 100 wins
-- **Overshooting:** If your roll would take you past 100, you stay in place
-- **Snakes:** Automatically slide down to a lower square
-- **Ladders:** Automatically climb up to a higher square
-- **Turns:** Players take turns in order, indicated by the highlighted player
-
-### Reconnection & Disconnection
-
-- **Auto-Reconnect:** If you refresh the page or accidentally close the browser, the game will automatically reconnect you when you return
-- **Leave Game Button:** Use the red "Leave Game" button in the lobby or game screen to permanently leave
-- **Session Storage:** Your game session is saved locally, so you can refresh without losing your spot
-- **Other Players:** If a player disconnects during a game, they remain and can reconnect. In the lobby, inactive players are removed after 30 minutes. The host can remove players before the game starts.
-- **Host:** The player who created the room starts the game and can reset it. Only the host sees test tools and reset during play.
-
-## 🛠️ Technical Details
-
-### Tech Stack
-
-- **Backend:** Node.js, Express, Socket.IO
-- **Frontend:** Vanilla JavaScript, HTML5 Canvas, CSS3
-- **Real-time Communication:** WebSockets via Socket.IO
-
-### Project Structure
-
-```
-snakes-and-ladders/
-├── server.js              # Backend server with game logic
-├── package.json           # Project dependencies
-├── public/
-│   ├── index.html         # Main HTML file
-│   ├── style.css          # Styling and responsive design
-│   └── js/                # Modular client (main.js, ui.js, socket-handlers.js, …)
-└── README.md              # This file
-```
-
-### Game Configuration
-
-The game includes:
-- **Board Size:** 10x10 (100 squares)
-- **Snakes:** 10 snakes at various positions
-- **Ladders:** 9 ladders at various positions
-- **Players:** 1-6 players per game
-- **Unique Player Colors:** Each player gets a distinct color
-
-### Snakes Positions
-- 16 → 6
-- 47 → 26
-- 49 → 11
-- 56 → 53
-- 62 → 19
-- 64 → 60
-- 87 → 24
-- 93 → 73
-- 95 → 75
-- 98 → 78
-
-### Ladders Positions
-- 1 → 38
-- 4 → 14
-- 9 → 31
-- 21 → 42
-- 28 → 84
-- 36 → 44
-- 51 → 67
-- 71 → 91
-
-## 📱 Device Compatibility
-
-### Tested and Working On:
-- ✅ Desktop browsers (Chrome, Firefox, Safari, Edge)
-- ✅ Mobile browsers (iOS Safari, Chrome Mobile, Firefox Mobile)
-- ✅ Tablets (iPad, Android tablets)
-- ✅ Various screen sizes (from 320px to 4K)
-
-## 🔧 Troubleshooting
-
-### Can't Connect to Server
-- Make sure all devices are on the same WiFi network
-- Check if your firewall is blocking port 3000
-- Verify you're using the correct IP address
-
-### Game Not Loading
-- Clear your browser cache
-- Make sure JavaScript is enabled
-- Try a different browser
-
-### Players Can't Join
-- Verify the room code is correct (case-sensitive)
-- Make sure the game hasn't started yet
-- Check if the room is full (max 6 players)
-
-### Mobile Display Issues
-- Rotate your device to landscape mode for better view
-- Zoom out if the board appears too large
-- Refresh the page if elements don't load properly
-
-## 🎯 Advanced Usage
-
-### Custom Port
-To run on a different port, set the PORT environment variable:
-```bash
-PORT=8080 npm start
-```
-
-### Development Mode
-The server automatically serves static files from the `public` directory. Any changes to client-side files will be reflected on page refresh.
-
-```bash
-npm run dev:live   # nodemon — restarts on server.js changes
-```
-
-### Tests
-
-```bash
-npm test              # unit + Socket.IO integration tests
-npm run test:watch    # re-run on file changes
-```
-
-Tests cover game rules (sanitization, host, customization, movement), and live server flows (create/join, peek, start, debounce, turn unlock, kick, discovery, reconnect, host-only reset).
-
-## 🤝 Contributing
-
-Feel free to fork this project and add your own features! Some ideas:
-- Custom board themes
-- Sound effects
-- Chat functionality
-- Player avatars
-- Game statistics
-- Multiple board layouts
-
-## 📝 License
-
-MIT License - feel free to use this project for personal or commercial purposes.
-
-## 🎉 Enjoy!
-
-Have fun playing Snakes & Ladders with your friends! If you encounter any issues or have suggestions, feel free to reach out.
-
----
-
-**Made with ❤️ for game lovers everywhere**
+MIT License.

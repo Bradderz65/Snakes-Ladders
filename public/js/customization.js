@@ -42,7 +42,7 @@ const Customization = {
             }
         });
 
-        message += '\nWould you like to choose different colors/icons, or keep your choice?';
+        message += '\nChoose another available color or icon before joining.';
 
         DOM.conflictMessage.textContent = message;
         DOM.conflictModal.classList.add('active');
@@ -50,10 +50,8 @@ const Customization = {
     
     tryJoinWithConflictCheck(action) {
         let players = [];
-        if (action.type === 'join-room' && GameState.lastRoomPeek?.found) {
+        if (action.type === 'join-room' && GameState.lastRoomPeek?.found && GameState.lastRoomPeek.roomId === action.roomId) {
             players = GameState.lastRoomPeek.players || [];
-        } else if (GameState.gameState?.players) {
-            players = GameState.gameState.players;
         }
 
         if (players.length > 0) {
@@ -73,7 +71,7 @@ const Customization = {
             const discoverable = DOM.enableDiscoveryCheckbox.checked;
             const hostname = discoverable ? `${action.playerName}'s Game` : null;
 
-            GameState.socket.emit('create-room', {
+            GameState.send('create-room', {
                 playerName: action.playerName,
                 discoverable,
                 hostname,
@@ -89,7 +87,7 @@ const Customization = {
                 exactRollToWin: GameState.exactRollToWin
             });
         } else if (action.type === 'join-room') {
-            GameState.socket.emit('join-room', {
+            GameState.send('join-room', {
                 roomId: action.roomId,
                 playerName: action.playerName,
                 playerColor: GameState.selectedColor,
@@ -108,6 +106,7 @@ const Customization = {
             DOM.setupSubtitle.textContent = 'Join a Game - Step 2: Choose Your Color';
             const colorContent = DOM.stepColor.querySelector('.collapsible-content');
             colorContent.classList.remove('collapsed');
+            DOM.stepColor.querySelector('.section-header-toggle').setAttribute('aria-expanded', 'true');
             GameState.autoOpenedSections.color = true;
         } else if (!name && GameState.joinSteps.name) {
             GameState.joinSteps.name = false;
@@ -131,6 +130,7 @@ const Customization = {
             DOM.setupSubtitle.textContent = 'Join a Game - Step 3: Choose Your Icon';
             const iconContent = DOM.stepIcon.querySelector('.collapsible-content');
             iconContent.classList.remove('collapsed');
+            DOM.stepIcon.querySelector('.section-header-toggle').setAttribute('aria-expanded', 'true');
             GameState.autoOpenedSections.icon = true;
         }
     },

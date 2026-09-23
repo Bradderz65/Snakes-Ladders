@@ -14,6 +14,7 @@ const UI = {
     },
 
     renderTurnMarkup(player) {
+        if (!player) return 'Waiting for players';
         const color = Utils.escapeHtml(player.color);
         const name = UI.formatPlayerName(player);
         return `
@@ -85,6 +86,7 @@ const UI = {
         const safeName = Utils.escapeHtml(player.name);
         const suffixes = [];
         if (player.isBot) suffixes.push('AI');
+        else if (player.disconnectedAt) suffixes.push('Reconnecting');
         if (options.isHost) suffixes.push('Host');
         if (options.isCurrentPlayer) suffixes.push('You');
 
@@ -197,6 +199,7 @@ const UI = {
     updateHostOnlyTools() {
         const show = !!GameState.isHost;
         DOM.hostOnlyTools.forEach(el => {
+            el.hidden = !show;
             el.style.display = show ? '' : 'none';
         });
         if (DOM.resetGameBtn) {
@@ -235,12 +238,12 @@ const UI = {
         if (GameState.isHost) {
             DOM.lobbyHostHint.textContent = 'You are the host. Start the game when everyone is ready.';
             if (DOM.lobbyInfo) {
-                const allReady = GameState.gameState.players.every(p => p.ready);
+                const allReady = GameState.gameState.players.every(p => p.ready && !p.disconnectedAt);
                 DOM.lobbyInfo.textContent = allReady
                     ? 'All players ready — start when you are'
                     : 'Waiting for all players to be ready…';
             }
-            DOM.startGameBtn.style.display = GameState.gameState.players.every(p => p.ready) ? 'block' : 'none';
+            DOM.startGameBtn.style.display = GameState.gameState.players.every(p => p.ready && !p.disconnectedAt) ? 'block' : 'none';
         } else {
             DOM.lobbyHostHint.textContent = 'Waiting for the host to start the game.';
             DOM.startGameBtn.style.display = 'none';
@@ -299,6 +302,8 @@ const UI = {
     
     updateLobby() {
         if (!GameState.gameState) return;
+        DOM.readyBtn.disabled = !GameState.socket?.connected || GameState.isReconnecting;
+        DOM.startGameBtn.disabled = !GameState.socket?.connected || GameState.isReconnecting;
 
         UI.updateLobbyRules();
         UI.updateLobbyHostHint();
@@ -332,7 +337,7 @@ const UI = {
                     <div class="player-name">${UI.formatPlayerName(player, { isCurrentPlayer, isHost: isHostPlayer })}</div>
                 </div>
                 <span class="ready-badge ${player.ready ? 'ready' : 'waiting'}">
-                    ${player.ready ? '✓ Ready' : 'Waiting...'}
+                    ${player.disconnectedAt ? 'Reconnecting…' : player.ready ? '✓ Ready' : 'Waiting...'}
                 </span>
                 ${actionsHtml}
             `;
@@ -342,7 +347,7 @@ const UI = {
                 kickBtn.dataset.persistentId = player.persistentId;
                 kickBtn.addEventListener('click', () => {
                     if (confirm(`Remove ${player.name} from the lobby?`)) {
-                        GameState.socket.emit('kick-player', {
+                        GameState.send('kick-player', {
                             roomId: GameState.currentRoom,
                             targetPersistentId: player.persistentId
                         });
@@ -410,9 +415,12 @@ const UI = {
             DOM.mobileScoreboardList.appendChild(mobileChip.firstElementChild);
         });
 
-        const isMyTurn = GameState.currentPlayer && currentTurnPlayer.persistentId === GameState.currentPlayer.persistentId;
+        const isMyTurn = GameState.currentPlayer && currentTurnPlayer?.persistentId === GameState.currentPlayer.persistentId;
         if (
             isMyTurn &&
+            GameState.socket?.connected &&
+            !GameState.isReconnecting &&
+            !GameState.gameState.turnLocked &&
             !GameState.gameState.winner &&
             !GameState.animationInProgress &&
             !GameState.diceAnimationInProgress &&
@@ -433,6 +441,7 @@ const UI = {
     },
     
     showWinnerModal(winner) {
+        DOM.playAgainBtn.style.display = GameState.isHost ? '' : 'none';
         DOM.winnerName.textContent = winner.name;
         const serverRolls = GameState.gameState?.playerRollCounts?.[winner.persistentId];
         const winnerRollCount = serverRolls ?? GameState.playerRollCounts[winner.persistentId] ?? 0;
@@ -453,6 +462,8 @@ const UI = {
         DOM.setupScreen.style.display = 'block';
         
         if (mode === 'create') {
+            GameState.lastRoomPeek = null;
+            UI.updateTakenCustomizations({ colors: [], icons: [] });
             DOM.setupSubtitle.textContent = 'Configure your session';
             DOM.gameOptionsSection.style.display = 'block';
             DOM.createRoomBtn.style.display = 'inline-flex';
@@ -464,6 +475,11 @@ const UI = {
             
             DOM.stepColor.querySelector('.collapsible-content').classList.remove('collapsed');
             DOM.stepIcon.querySelector('.collapsible-content').classList.remove('collapsed');
+            [DOM.stepColor, DOM.stepIcon].forEach(section => {
+                const toggle = section.querySelector('.section-header-toggle');
+                toggle.classList.remove('collapsed');
+                toggle.setAttribute('aria-expanded', 'true');
+            });
         } else if (mode === 'join') {
             DOM.setupSubtitle.textContent = 'Join a session — enter your name';
             DOM.gameOptionsSection.style.display = 'none';
@@ -490,6 +506,8 @@ const UI = {
     updatePlayerPreview() {
         DOM.previewPlayer.style.backgroundColor = GameState.selectedColor;
         DOM.previewIcon.textContent = GameState.selectedIcon;
+        DOM.colorOptions.forEach(option => option.setAttribute('aria-pressed', String(option.dataset.color === GameState.selectedColor)));
+        DOM.iconOptions.forEach(option => option.setAttribute('aria-pressed', String(option.dataset.icon === GameState.selectedIcon)));
     },
     
     openDiceControlModal() {

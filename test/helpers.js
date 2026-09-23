@@ -15,16 +15,19 @@ function waitForConnect(socket, timeoutMs = 5000) {
     });
 }
 
-function waitForEvent(socket, event, timeoutMs = 5000) {
+function waitForEvent(socket, event, timeoutMs = 5000, predicate = () => true) {
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
+            socket.off(event, handler);
             reject(new Error(`Timeout waiting for "${event}"`));
         }, timeoutMs);
-
-        socket.once(event, (payload) => {
+        const handler = payload => {
+            if (!predicate(payload)) return;
+            socket.off(event, handler);
             clearTimeout(timer);
             resolve(payload);
-        });
+        };
+        socket.on(event, handler);
     });
 }
 
@@ -64,7 +67,9 @@ async function createRoom(socket, name, options = {}) {
         playerIcon: options.icon || '🎮',
         diceCount: options.diceCount || 1,
         snakeThreshold: options.snakeThreshold || 3,
-        minesEnabled: false,
+        minesEnabled: !!options.minesEnabled,
+        minesCount: options.minesCount || 5,
+        ladderMinesOnly: !!options.ladderMinesOnly,
         discoverable: !!options.discoverable,
         requireSixToStart: !!options.requireSixToStart,
         exactRollToWin: !!options.exactRollToWin

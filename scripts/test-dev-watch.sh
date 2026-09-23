@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 LOG_FILE="/tmp/snakes-dev-watch-test.log"
 : > "$LOG_FILE"
 
-PORT=3100 npm run dev:live > "$LOG_FILE" 2>&1 &
+PORT=0 ./node_modules/.bin/nodemon --watch server.js --watch lib --ext js,json --signal SIGTERM server.js > "$LOG_FILE" 2>&1 &
 DEV_PID=$!
 
 cleanup() {
@@ -57,8 +57,8 @@ if [[ "$starts_after_frontend" != "$initial_starts" ]]; then
   exit 1
 fi
 
-# Backend file change SHOULD restart.
-touch server.js
+# A game-engine change SHOULD restart as well as entrypoint changes.
+touch lib/game-engine.js
 sleep 4
 starts_after_backend="$(count_starts)"
 

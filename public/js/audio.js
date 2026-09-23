@@ -90,7 +90,7 @@ const AudioSystem = {
 
     setMuted(muted) {
         GameState.soundMuted = muted;
-        localStorage.setItem('snakesSoundMuted', muted ? 'true' : 'false');
+        try { localStorage.setItem('snakesSoundMuted', muted ? 'true' : 'false'); } catch { /* Storage may be disabled. */ }
     },
 
     toggleMuted() {

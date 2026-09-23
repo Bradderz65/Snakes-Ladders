@@ -141,25 +141,6 @@ const Explosions = {
             const progress = Math.min(elapsed / explosion.duration, 1);
 
             if (progress >= 1) {
-                if (GameState.currentRoom && explosion.minePosition) {
-                    GameState.socket.emit('explosion-complete', {
-                        roomId: GameState.currentRoom,
-                        position: explosion.minePosition
-                    });
-
-                    if (
-                        GameState.pendingTurnAnimationCompletion &&
-                        GameState.pendingTurnAnimationCompletion.waitForExplosionPosition === explosion.minePosition
-                    ) {
-                        const pendingCompletion = GameState.pendingTurnAnimationCompletion;
-                        GameState.pendingTurnAnimationCompletion = null;
-                        GameState.turnResolutionInProgress = false;
-                        GameState.socket.emit('turn-animation-complete', {
-                            roomId: pendingCompletion.roomId,
-                            playerId: pendingCompletion.playerId
-                        });
-                    }
-                }
                 return false;
             }
 

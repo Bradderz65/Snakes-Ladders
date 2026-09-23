@@ -896,3 +896,29 @@ body.game-active-mobile #game-screen .game-hud-sidebar {
         display: flex !important;
     }
 }
+/* Keep connection status clear of the phone's game-menu button. */
+body.game-active-mobile .connection-status {
+    top: 4px;
+    right: 4px;
+    padding: 4px;
+    gap: 0;
+    pointer-events: none;
+}
+
+body.game-active-mobile #connection-status-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+/* Full-viewport game layouts must not inherit the setup screen's body padding. */
+body.game-active-mobile {
+    padding: 0 !important;
+}
+
+#game-screen .host-only-tool[hidden] {
+    display: none !important;
+}
